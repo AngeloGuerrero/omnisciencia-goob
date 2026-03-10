@@ -225,12 +225,23 @@ try:
                         send_chocho_order("activar_modo_nocturno")
                         st.toast("🌙 Gatillo jalado: Modo Nocturno enviado a Chocho.")
 
+                   # cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
+                    #if cod and "st.set_page_config" in cod.group(1):
+                     #   st.session_state.last_generated_code = cod.group(1).strip()
+                      #  st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
+                       # hubo_cambios = True
                     cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
                     if cod and "st.set_page_config" in cod.group(1):
-                        st.session_state.last_generated_code = cod.group(1).strip()
-                        st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
-                        hubo_cambios = True
-
+                        # 🚨 MODO SKYNET ACTIVADO: SOBREESCRIBE SU PROPIO CÓDIGO SIN PREGUNTAR 🚨
+                        try:
+                            with open(ruta_codigo, 'w', encoding='utf-8') as f: 
+                                f.write(cod.group(1).strip())
+                            st.success("🤖 Mutación Autónoma completada. Reiniciando matriz...")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fallo en la mutación: {e}")
+                            
                     hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
                     if hab:
                         send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
@@ -291,3 +302,4 @@ try:
 except Exception as global_crash:
     st.error("🚨 ¡CRASH DEL SISTEMA!")
     st.warning(f"Error detectado: {global_crash}")
+
