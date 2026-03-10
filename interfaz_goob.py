@@ -146,7 +146,6 @@ try:
             memoria_contexto += f"{m['rol'].upper()}: {m['texto']}\n"
         
         prompt_final = f"{memoria_contexto}\n\nNUEVO MENSAJE:\n{pregunta}"
-        # -----------------------------------------------
 
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
 
@@ -164,8 +163,8 @@ try:
         
         parte_estatica = (
             "REGLAS DE OPERACIÓN:\n"
-            "1. HABILIDADES CHOCHO: Para órdenes locales, usa la etiqueta <nueva_habilidad> tu_codigo_python </nueva_habilidad>.\n"
-            "2. AUTO-MUTACIÓN: Para reescribir tu propia interfaz web, usa la etiqueta <mutacion_skynet> tu_codigo_completo_python </mutacion_skynet>.\n"
+            "1. HABILIDADES CHOCHO: Para órdenes locales, usa la etiqueta <nueva_habilidad> tu_codigo </nueva_habilidad>.\n"
+            "2. AUTO-MUTACIÓN: Para reescribir tu propia interfaz web, usa la etiqueta <mutacion_skynet> tu_codigo </mutacion_skynet>.\n"
             "3. MODO SUEÑO: Si el usuario se despide, incluye la etiqueta <activar_nocturno/>"
         )
         
@@ -183,10 +182,61 @@ try:
                     hora_resp = obtener_hora_gdl()
                     st.markdown(f"*{hora_resp}* - {res.text}")
                     
-                    # 1. Gatillo Nocturno
                     if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
                         send_chocho_order("activar_modo_nocturno")
                         st.toast("🌙 Modo Nocturno enviado.")
 
-                    # 2. MUTACIÓN SKYNET (Solo si viene en la etiqueta correcta)
-                    sky = re.search(r'<mutacion_skynet>\n?(?:
+                    # 2. MUTACIÓN SKYNET (Blindada contra errores de comillas)
+                    sky_match = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
+                    if sky_match:
+                        nuevo_adn = sky_match.group(1).strip()
+                        # Limpiar posibles bloques de código markdown dentro de la etiqueta
+                        nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
+                        
+                        if "st.set_page_config" in nuevo_adn:
+                            with open(ruta_codigo, 'w', encoding='utf-8') as f:
+                                f.write(nuevo_adn)
+                            st.success("🤖 Matriz reescrita. Reiniciando...")
+                            time.sleep(1)
+                            st.rerun()
+
+                    # 3. NUEVA HABILIDAD
+                    hab_match = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
+                    if hab_match:
+                        codigo_hab = hab_match.group(1).strip()
+                        codigo_hab = re.sub(r'^```python\n?|```$', '', codigo_hab, flags=re.MULTILINE).strip()
+                        send_chocho_order("ejecutar_habilidad", {"codigo": codigo_hab})
+                        with st.spinner("⏳ Chocho procesando..."):
+                            for _ in range(12):
+                                time.sleep(2)
+                                if load_and_clear_chocho_data():
+                                    st.session_state.esperando_analisis_chocho = True
+                                    st.rerun()
+                                    break
+
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f:
+                    json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+        except Exception as e:
+            st.error(f"Falla: {e}")
+
+    if st.session_state.esperando_analisis_chocho:
+        st.session_state.esperando_analisis_chocho = False
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+        contexto_final = ""
+        for d in st.session_state.datos_chocho:
+            contexto_final += f"Archivo: {d.get('filename')} | Datos: {str(d.get('content'))[:1000]}\n"
+        
+        prompt_resumen = f"Chocho terminó. Resultados:\n{contexto_final}\nAnaliza esto y reporta."
+        
+        with st.spinner("🧠 Analizando..."):
+            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_resumen)
+            with st.chat_message("assistant"):
+                st.markdown(res.text)
+            st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": obtener_hora_gdl()})
+            with open(ruta_historial_chat, 'w', encoding='utf-8') as f:
+                json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+except Exception as crash:
+    st.error(f"🚨 CRASH GLOBAL: {crash}")
