@@ -136,9 +136,8 @@ try:
                         nuevo_adn = sky.group(1).strip()
                         nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
                         if "st.set_page_config" in nuevo_adn:
-                            # 1. Guardar en la nube (para el rerun inmediato)
                             with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(nuevo_adn)
-                            # 2. MANDAR A CHOCHO PARA BACKUP REAL EN DISCO G:
+                            # MANDAR A CHOCHO PARA BACKUP REAL EN DISCO G:
                             enviar_orden_chocho("save_local_backup", {"codigo": nuevo_adn, "filename": f"auto_{time.strftime('%H%M%S')}.py"})
                             st.success("🤖 Mutación completada. Sincronizando con Chocho...")
                             time.sleep(1)
