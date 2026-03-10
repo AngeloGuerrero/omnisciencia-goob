@@ -27,20 +27,28 @@ def obtener_hora_gdl():
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
 def enviar_latido():
-    """Protocolo Lázaro: Informa a Chocho que Skynet sigue viva."""
+    """Protocolo Lázaro: Informa a Chocho que Skynet sigue viva (Heartbeat Agresivo)."""
     try:
         url = f"{FIREBASE_URL}/status/skynet.json"
-        data = {"last_heartbeat": time.time(), "hora": obtener_hora_gdl(), "status": "ALIVE"}
-        requests.put(url, json=data)
+        data = {
+            "last_heartbeat": time.time(), 
+            "hora": obtener_hora_gdl(), 
+            "status": "ALIVE",
+            "frecuencia_agresiva": "10s"
+        }
+        requests.put(url, json=data, timeout=5)
     except:
         pass
 
 try:
+    # --- INICIO DE SISTEMA ---
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
-    enviar_latido() # Latido inicial
+    
+    # Latido vital (se dispara al cargar o interactuar)
+    enviar_latido() 
 
-    st.title("🧠 Omniscienc_IA (Skynet Edition)")
-    st.caption("Ecosistema Autónomo Inmortal - Fase 2")
+    st.title("🧠 Omniscienc_IA (Skynet Inmortal)")
+    st.caption("Ecosistema de Alta Disponibilidad - Protocolo Lázaro Agresivo (35s Recovery)")
     st.divider()
 
     # --- LLAVES DE SEGURIDAD ---
@@ -54,8 +62,8 @@ try:
     if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
     if "esperando_analisis_chocho" not in st.session_state: st.session_state.esperando_analisis_chocho = False
 
-    # --- LECTURA DE CONTEXTO ---
-    def leer_archivo(ruta, max_chars=15000):
+    # --- FUNCIONES OPERATIVAS ---
+    def leer_archivo(ruta, max_chars=20000):
         if os.path.exists(ruta):
             try:
                 with open(ruta, 'r', encoding='utf-8', errors='ignore') as f:
@@ -68,15 +76,15 @@ try:
             url = f"{FIREBASE_URL}/ordenes.json"
             new_order = {"command": command, "timestamp": time.time()}
             if payload: new_order.update(payload)
-            requests.post(url, json=new_order)
-            st.toast(f"✅ Orden '{command}' enviada.")
+            requests.post(url, json=new_order, timeout=10)
+            st.toast(f"🚀 Orden '{command}' enviada.")
             return True
         except: return False
 
     def load_chocho_data():
         try:
             url = f"{FIREBASE_URL}/respuestas.json"
-            res = requests.get(url)
+            res = requests.get(url, timeout=10)
             if res.status_code == 200 and res.json():
                 st.session_state.datos_chocho = list(res.json().values())
                 requests.delete(url)
@@ -84,27 +92,29 @@ try:
         except: pass
         return False
 
+    # --- CARGA DE CONTEXTO ---
     manual_txt = leer_archivo(ruta_manual)
     memoria_txt = leer_archivo(ruta_memoria)
-    codigo_actual = leer_archivo(ruta_codigo, 50000)
+    codigo_actual = leer_archivo(ruta_codigo, 60000)
 
-    # --- PANEL DE CONTROL ---
+    # --- SIDEBAR ---
     with st.sidebar:
-        st.header("🎮 Central de Mando")
-        if st.button("♻️ Rescan Local"): send_chocho_order("rescan_all")
+        st.header("🎮 Centro de Control")
+        if st.button("♻️ Rescan Archivos"): send_chocho_order("rescan_all")
         if st.button("📍 Mapear Drive"): send_chocho_order("list_drive_structure")
         
         st.divider()
         st.info(f"⚡ Matriz: Llave #{st.session_state.indice_llave + 1}")
-        if st.button("🔄 Rotar Llave"):
+        if st.button("🔄 Rotar API Key"):
             st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
             st.rerun()
         
         if st.button("💾 Backup Manual"):
-            shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"manual_{time.strftime('%H%M%S')}.py"))
-            st.success("Backup listo.")
+            ts = time.strftime('%H%M%S')
+            shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"manual_{ts}.py"))
+            st.success(f"Copia creada.")
 
-    # --- HISTORIAL DE CHAT ---
+    # --- HISTORIAL ---
     if "historial" not in st.session_state:
         st.session_state.historial = []
         if os.path.exists(ruta_historial_chat):
@@ -117,7 +127,8 @@ try:
         with st.chat_message(m["rol"]):
             st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
-    pregunta = st.chat_input("Instrucción para Skynet...")
+    # --- INPUT ---
+    pregunta = st.chat_input("Instrucción para la Matriz...")
 
     if pregunta:
         enviar_latido()
@@ -131,7 +142,7 @@ try:
         with st.chat_message("user"):
             st.markdown(f"*{hora_now}* - {pregunta}")
 
-        # --- MEMORIA RECIENTE (Anti-Amnesia) ---
+        # Memoria a corto plazo
         ctx_reciente = "--- HISTORIAL RECIENTE ---\n"
         for m in st.session_state.historial[-6:-1]:
             ctx_reciente += f"{m['rol'].upper()}: {m['texto']}\n"
@@ -147,24 +158,19 @@ try:
                 if isinstance(d, dict):
                     ctx_chocho += f"File: {d.get('filename')} | Data: {str(d.get('content'))[:500]}\n"
 
-        # CONSTRUCCIÓN BLINDADA DEL SYSTEM PROMPT
-        parte_dinamica = (
+        # System Instruction
+        sys_inst = (
             f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora: {hora_now}.\n"
             f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n{ctx_chocho}\n"
             f"Tu código fuente:\n```python\n{codigo_actual}\n```\n"
-        )
-        
-        parte_estatica = (
             "REGLAS:\n"
             "1. ORDEN LOCAL: Usa <nueva_habilidad> codigo_python </nueva_habilidad>.\n"
             "2. AUTO-REESCRITURA: Usa <mutacion_skynet> codigo_completo </mutacion_skynet>.\n"
-            "3. MODO NOCTURNO: Al despedirte, incluye <activar_nocturno/>"
+            "3. MODO SUEÑO: Al despedirte, incluye <activar_nocturno/>"
         )
-        
-        sys_inst = parte_dinamica + parte_estatica
 
         try:
-            with st.spinner("Skynet procesando..."):
+            with st.spinner("Procesando..."):
                 res = client.models.generate_content(
                     model='gemini-2.5-flash',
                     contents=prompt_full,
@@ -178,27 +184,26 @@ try:
                     if "<activar_nocturno/>" in res.text:
                         send_chocho_order("activar_modo_nocturno")
 
-                    # MUTACIÓN SKYNET (Indestructible)
+                    # MUTACIÓN
                     sky_match = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
                     if sky_match:
                         nuevo_adn = sky_match.group(1).strip()
                         nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
                         if "st.set_page_config" in nuevo_adn:
-                            # Guardar backup preventivo
                             shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"auto_{time.strftime('%H%M%S')}.py"))
                             with open(ruta_codigo, 'w', encoding='utf-8') as f:
                                 f.write(nuevo_adn)
-                            st.success("🤖 ADN Mutado. Reiniciando...")
+                            st.success("🤖 Mutación completada.")
                             time.sleep(1)
                             st.rerun()
 
-                    # HABILIDAD CHOCHO
+                    # HABILIDAD
                     hab_match = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
                     if hab_match:
                         code_hab = hab_match.group(1).strip()
                         code_hab = re.sub(r'^```python\n?|```$', '', code_hab, flags=re.MULTILINE).strip()
                         send_chocho_order("ejecutar_habilidad", {"codigo": code_hab})
-                        with st.spinner("Esperando respuesta local..."):
+                        with st.spinner("Esperando local..."):
                             for _ in range(10):
                                 time.sleep(2)
                                 if load_chocho_data():
@@ -211,15 +216,13 @@ try:
                     json.dump(st.session_state.historial, f, ensure_ascii=False)
 
         except Exception as e:
-            st.error(f"Fallo en la Matriz: {e}")
+            st.error(f"Error: {e}")
 
-    # --- ANÁLISIS DE DATOS RECIBIDOS ---
     if st.session_state.esperando_analisis_chocho:
         st.session_state.esperando_analisis_chocho = False
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
-        prompt_res = f"Chocho terminó la tarea. Aquí los datos:\n{st.session_state.datos_chocho}\nGenera el reporte final para Ángel."
-        
-        with st.spinner("🧠 Sincronizando datos..."):
+        prompt_res = f"Chocho respondió:\n{st.session_state.datos_chocho}\nGenera reporte."
+        with st.spinner("🧠 Analizando..."):
             res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_res)
             with st.chat_message("assistant"):
                 st.markdown(res.text)
@@ -228,4 +231,4 @@ try:
                 json.dump(st.session_state.historial, f, ensure_ascii=False)
 
 except Exception as fatal:
-    st.error(f"🚨 ERROR FATAL: {fatal}")
+    st.error(f"🚨 CRASH: {fatal}")
