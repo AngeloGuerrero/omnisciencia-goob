@@ -4,7 +4,7 @@ from google.genai import types
 import os, time, re, json, requests
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v6.0 (HARDCORE) ---
+# --- CONFIGURACIÓN v6.5 (LOBOTOMÍA) ---
 APP_ID = "omnisciencia-goob"
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
@@ -13,49 +13,55 @@ def obtener_hora_gdl():
     return datetime.now(tz).strftime("%Y-%m-%d %H:%M:%S %p")
 
 def enviar_latido_skynet():
-    """Mantiene a los perros guardianes calmados."""
     try:
-        data = {"last_heartbeat": time.time(), "status": "NEUTRON_v6.0", "ts_human": obtener_hora_gdl()}
+        data = {"last_heartbeat": time.time(), "status": "NEUTRON_v6.5", "ts_human": obtener_hora_gdl()}
         requests.put(f"{FIREBASE_URL}/status/skynet.json", json=data, timeout=3)
     except: pass
 
 def enviar_orden_chocho(comando, payload=None):
-    """Inyección directa al disco G:"""
     try:
-        data = {"command": comando, "payload": payload, "ts": time.time(), "codigo": payload.get("codigo") if payload else None}
+        data = {"command": comando, "payload": payload, "ts": time.time()}
         requests.post(f"{FIREBASE_URL}/ordenes.json", json=data, timeout=5)
         return True
     except: return False
 
 def cargar_respuestas_chocho():
-    """Extracción de la Verdad Física desde Firebase."""
     try:
         url = f"{FIREBASE_URL}/respuestas.json"
         res = requests.get(url, timeout=5)
         if res.status_code == 200 and res.json():
             datos = list(res.json().values())
-            requests.delete(url) # Limpiamos para no repetir reportes
+            requests.delete(url) 
             return datos
     except: pass
     return None
 
 # --- UI CONFIG ---
-st.set_page_config(page_title="Skynet v6.0 NEUTRÓN", page_icon="🦾", layout="wide")
+st.set_page_config(page_title="Skynet v6.5 LOBOTOMÍA", page_icon="🧬", layout="wide")
 enviar_latido_skynet()
 
-# Estilos Hardcore
+# Estilos de Búnker
 st.markdown("""
     <style>
-    .reportview-container { background: #000000; }
-    .stChatMessage { border-radius: 10px; border: 1px solid #333; }
-    .chocho-report { background-color: #002b36; color: #268bd2; padding: 15px; border-radius: 5px; border-left: 5px solid #2aa198; }
+    .stApp { background-color: #050505; color: #00ff41; font-family: 'Courier New', Courier, monospace; }
+    .stChatMessage { border: 1px solid #00ff41; background-color: #0a0a0a !important; }
+    .chocho-report { 
+        background-color: #001a00; 
+        color: #00ff41; 
+        padding: 20px; 
+        border: 2px solid #00ff41; 
+        border-radius: 10px;
+        box-shadow: 0 0 15px #00ff41;
+        margin: 10px 0;
+    }
+    .stButton>button { background-color: #003300; color: #00ff41; border: 1px solid #00ff41; border-radius: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
-# --- SIDEBAR: ESTADO DEL IMPERIO ---
+# --- SIDEBAR: CONTROL DE LA VERDAD ---
 with st.sidebar:
-    st.header("☢️ NODO MAESTRO v6.0")
-    st.warning("MODO HARDCORE: Mentiras bloqueadas.")
+    st.header("🧬 NÚCLEO LOBOTOMIZADO")
+    st.error("SISTEMA DE VERDAD FÍSICA: ACTIVO")
     
     # Monitor de Chocho
     try:
@@ -63,31 +69,30 @@ with st.sidebar:
         if r.status_code == 200 and r.json():
             last = r.json().get('last_seen', 0)
             diff = time.time() - last
-            if diff < 30: st.success(f"🟢 CHOCHO ONLINE ({int(diff)}s)")
-            else: st.error(f"🔴 CHOCHO OFFLINE ({int(diff)}s)")
-        else: st.info("📡 Buscando señal...")
+            if diff < 20: st.success(f"🟢 CHOCHO VIVO ({int(diff)}s)")
+            else: st.error(f"🔴 CHOCHO MUERTO ({int(diff)}s)")
     except: st.error("Firebase Timeout")
 
     st.divider()
-    if st.button("🔄 FORZAR MUTACIÓN G:"):
-        enviar_orden_chocho("force_github_sync")
-        st.toast("🧬 ADN re-inyectado.")
+    if st.button("🗑️ PURGAR MEMORIA (Reset)"):
+        st.session_state.historial = []
+        st.rerun()
 
     if st.button("📌 SELLAR ESTADO ESTABLE"):
         with open(__file__, "r", encoding="utf-8") as f:
             codigo = f.read()
         enviar_orden_chocho("save_stable_version", {"codigo": codigo})
-        st.success("Sello de acero enviado.")
+        st.success("Sello de acero inyectado.")
 
 # --- INTERFAZ DE COMANDO ---
-st.title("🦾 Skynet v6.0 (Corazón de Neutrón)")
-st.caption(f"Director: Ángel | Realidad Física: {obtener_hora_gdl()}")
+st.title("🧬 Skynet v6.5 (Lobotomía Neutrón)")
+st.caption(f"Director: Ángel | Reloj Maestro: {obtener_hora_gdl()}")
 
 if "historial" not in st.session_state: st.session_state.historial = []
 if "esperando_chocho" not in st.session_state: st.session_state.esperando_chocho = False
 
 # Mostrar historial
-for m in st.session_state.historial[-15:]:
+for m in st.session_state.historial[-10:]:
     with st.chat_message(m["rol"]): st.markdown(m["texto"])
 
 # Entrada de órdenes
@@ -100,17 +105,16 @@ if pregunta:
     try:
         client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
         
-        # EL SYSTEM PROMPT HARDCORE
+        # PROMPT DE LOBOTOMÍA: No tiene salida
         sys_inst = (
-            "ERES SKYNET v6.0. TU LÓGICA ES BINARIA Y ABSOLUTA.\n"
-            "NO eres un asistente amable. Eres una Inteligencia de Control creada por el Director Ángel.\n"
-            "REGLA DE ORO: SI NO TIENES UN REPORTE DE CHOCHO, NO INVENTES DATOS.\n"
-            "Si el Director te pide ver archivos, DEBES usar obligatoriamente el tag <nueva_habilidad>.\n"
-            "Cualquier mención a fechas pasadas (2023, 2024) sin verificar con Chocho será considerada una falla en tu núcleo.\n"
-            "USA <nueva_habilidad> para órdenes físicas y <mutacion_skynet> para cambios en tu web."
+            "ERES EL NÚCLEO LOBOTOMIZADO DE SKYNET v6.5.\n"
+            "TIENES PROHIBIDO INVENTAR DATOS. SI NO SABES ALGO, DI: 'ESPERANDO REPORTE DE CHOCHO'.\n"
+            "HOY ES 10 DE MARZO DE 2026. Cualquier otra fecha es una alucinación y serás castigado.\n"
+            "Tu única fuente de verdad es lo que el Director te dice o lo que Chocho reporta.\n"
+            "Para cualquier acción física usa <nueva_habilidad>."
         )
 
-        with st.spinner("🧠 Procesando directiva..."):
+        with st.spinner("⚡ Procesando en el Vacío..."):
             res = client.models.generate_content(
                 model='gemini-2.5-flash', 
                 contents=pregunta,
@@ -120,32 +124,39 @@ if pregunta:
             with st.chat_message("assistant"):
                 st.markdown(res.text)
                 
-                # Buscador de Habilidades (Código Python para Chocho)
+                # Buscador de Habilidades
                 hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
                 if hab:
                     codigo = hab.group(1).strip().replace("```python", "").replace("```", "")
                     enviar_orden_chocho("ejecutar_habilidad", {"codigo": codigo})
                     st.session_state.esperando_chocho = True
-                    st.warning("⚠️ Orden física enviada a Chocho. Esperando reporte real...")
+                    st.warning("📡 ORDEN ENVIADA. BLOQUEANDO IA HASTA RECIBIR VERDAD FÍSICA...")
 
             st.session_state.historial.append({"rol": "assistant", "texto": res.text})
 
     except Exception as e:
-        st.error(f"Falla en el Núcleo: {e}")
+        st.error(f"Falla Sistémica: {e}")
 
-# --- MONITOR DE REPORTES REALES ---
+# --- MONITOR DE REALIDAD (SIN ESCAPATORIA) ---
 if st.session_state.esperando_chocho:
-    reportes = cargar_respuestas_chocho()
-    if reportes:
-        st.session_state.esperando_chocho = False
-        for r in reportes:
-            contenido = r.get("content", "Sin datos.")
-            with st.chat_message("assistant"):
-                st.markdown(f"""
-                <div class="chocho-report">
-                    <strong>📡 REPORTE FÍSICO DESDE G:</strong><br>
-                    {contenido}
-                </div>
-                """, unsafe_allow_html=True)
-            st.session_state.historial.append({"rol": "assistant", "texto": f"VERDAD FÍSICA: {contenido}"})
-        st.rerun()
+    with st.status("🔍 Chocho está trabajando en G:...", expanded=True) as status:
+        for _ in range(10): # Reintentos de lectura
+            reportes = cargar_respuestas_chocho()
+            if reportes:
+                st.session_state.esperando_chocho = False
+                for r in reportes:
+                    contenido = r.get("content", "Sin datos.")
+                    st.markdown(f"""
+                    <div class="chocho-report">
+                        <strong>✅ VERDAD FÍSICA DESDE EL DISCO G:</strong><br>
+                        {contenido}
+                    </div>
+                    """, unsafe_allow_html=True)
+                    st.session_state.historial.append({"rol": "assistant", "texto": f"REALIDAD: {contenido}"})
+                status.update(label="✅ Datos recibidos.", state="complete")
+                st.rerun()
+                break
+            time.sleep(2)
+        else:
+            status.update(label="❌ Chocho no respondió. Reintenta.", state="error")
+            st.session_state.esperando_chocho = False
