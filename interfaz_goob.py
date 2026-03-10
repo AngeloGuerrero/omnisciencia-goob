@@ -10,6 +10,7 @@ import re
 import shutil
 import datetime
 import json
+import requests  # <-- El nuevo cartero para Firebase
 
 # --- RUTAS MAESTRAS (Adaptadas a la Nube) ---
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
@@ -18,8 +19,9 @@ ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
 ruta_codigo = os.path.abspath(__file__)
 ruta_versiones = os.path.join(ruta_raiz, "Versiones")
 ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
-ruta_puente_chocho = os.path.join(ruta_raiz, "chocho_datos_extraidos.json") 
-ruta_ordenes_chocho = os.path.join(ruta_raiz, "omnisciencia_ordenes.json") 
+
+# --- FIREBASE URL ---
+FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 os.makedirs(ruta_versiones, exist_ok=True)
 
@@ -39,7 +41,6 @@ try:
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
     if "last_generated_code" not in st.session_state: st.session_state.last_generated_code = None
     if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
-    if "chocho_last_mod_time" not in st.session_state: st.session_state.chocho_last_mod_time = None
 
     def leer_archivo(ruta, max_chars=15000):
         if os.path.exists(ruta):
@@ -59,43 +60,40 @@ try:
             return True
         except: return False
 
-    # --- Función para mandar órdenes a Chocho ---
+    # --- Función para mandar órdenes a Firebase ---
     def send_chocho_order(command, payload=None):
         try:
-            orders = []
-            if os.path.exists(ruta_ordenes_chocho) and os.path.getsize(ruta_ordenes_chocho) > 0:
-                with open(ruta_ordenes_chocho, 'r', encoding='utf-8') as f:
-                    try: orders = json.load(f)
-                    except: pass
-
-            new_order = {"command": command}
+            url = f"{FIREBASE_URL}/ordenes.json"
+            new_order = {"command": command, "timestamp": time.time()}
             if payload: new_order.update(payload)
-            orders.append(new_order)
-
-            with open(ruta_ordenes_chocho, 'w', encoding='utf-8') as f: json.dump(orders, f, ensure_ascii=False, indent=4)
-            st.toast(f"✅ Orden '{command}' enviada al Agente Chocho.", icon="🚀")
+            
+            # Enviamos la orden a la nube
+            requests.post(url, json=new_order)
+            st.toast(f"✅ Orden '{command}' enviada al puente Firebase.", icon="🚀")
             return True
         except Exception as e:
-            st.error(f"Fallo al enviar orden: {e}")
+            st.error(f"Fallo al enviar orden a la nube: {e}")
             return False
 
+    # --- Función para leer reportes desde Firebase ---
     def load_and_clear_chocho_data():
-        if os.path.exists(ruta_puente_chocho):
-            current_mod_time = os.path.getmtime(ruta_puente_chocho)
-            if st.session_state.chocho_last_mod_time is None or current_mod_time > st.session_state.chocho_last_mod_time:
-                try:
-                    with open(ruta_puente_chocho, 'r', encoding='utf-8') as f:
-                        file_content = f.read().strip()
-                    if file_content: 
-                        new_data = json.loads(file_content)
-                        if new_data: 
-                            st.session_state.datos_chocho = new_data
-                            st.toast(f"📥 {len(new_data)} nuevos reportes de Chocho recibidos.")
-                            with open(ruta_puente_chocho, 'w', encoding='utf-8') as f: json.dump([], f)
-                    st.session_state.chocho_last_mod_time = current_mod_time
-                except Exception:
-                    with open(ruta_puente_chocho, 'w', encoding='utf-8') as f: json.dump([], f)
-                    st.session_state.chocho_last_mod_time = os.path.getmtime(ruta_puente_chocho)
+        try:
+            url = f"{FIREBASE_URL}/respuestas.json"
+            respuesta = requests.get(url)
+            if respuesta.status_code == 200 and respuesta.json():
+                datos = respuesta.json()
+                
+                # Firebase devuelve un diccionario con IDs únicos. Lo convertimos a lista.
+                lista_datos = [val for key, val in datos.items()]
+                
+                if lista_datos:
+                    st.session_state.datos_chocho = lista_datos
+                    st.toast(f"📥 {len(lista_datos)} reportes recibidos desde Firebase.")
+                    
+                    # Borramos los datos de Firebase para no volver a leerlos
+                    requests.delete(url)
+        except Exception as e:
+            pass # Si falla o está vacío, no hacemos ruido
 
     manual_txt = leer_archivo(ruta_manual)
     memoria_txt = leer_archivo(ruta_memoria)
@@ -108,7 +106,7 @@ try:
             send_chocho_order("rescan_all")
         if st.button("📍 Mapear Carpetas de Drive"):
             send_chocho_order("list_drive_structure", {"account": "goob_drive"})
-            st.info("Chocho está creando el mapa de GOOB. Estará listo en unos segundos.")
+            st.info("Orden enviada a la nube. Chocho la procesará pronto.")
 
         st.divider()
         st.header("⚡ Estado del Sistema")
@@ -133,16 +131,6 @@ try:
                     with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(st.session_state.last_generated_code)
                     st.session_state.last_generated_code = None
                     st.success("✅ CÓDIGO APLICADO. Presiona F5.")
-
-    # --- LECTURA DE MAPAS DE DRIVE ---
-    mapa_drive_str = ""
-    mapa_file = os.path.join(ruta_raiz, "mapa_carpetas_goob_drive.json")
-    if os.path.exists(mapa_file):
-        try:
-            with open(mapa_file, 'r', encoding='utf-8') as f:
-                carpetas = json.load(f)
-                mapa_drive_str = f"Carpetas en GOOB Drive detectadas: {len(carpetas)}\n(El mapa detallado está guardado en disco. Puedes consultarlo para saber las rutas exactas)."
-        except: pass
 
     # --- CHAT Y RESPUESTAS ---
     if "historial" not in st.session_state:
@@ -169,12 +157,11 @@ try:
 
         contexto_chocho = ""
         if st.session_state.datos_chocho:
-            contexto_chocho = "\n\n--- DATOS DE CHOCHO ---\n"
+            contexto_chocho = "\n\n--- DATOS DE CHOCHO (DESDE FIREBASE) ---\n"
             for d in st.session_state.datos_chocho:
                 content_for_chocho = str(d.get('content'))[:1000]
                 contexto_chocho += f"Archivo: {d.get('filename')} | Estado: {d.get('status')}\nTexto: {content_for_chocho}\n\n"
 
-        # LA MAGIA ANTI-CRASH: Usando TRIPLE COMILLA para la f-string
         instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
         Manual:
         {manual_txt}
@@ -183,7 +170,6 @@ try:
         {memoria_txt}
 
         {contexto_chocho}
-        {mapa_drive_str}
 
         Código fuente actual:
         ```python
@@ -231,11 +217,3 @@ try:
 except Exception as global_crash:
     st.error("🚨 ¡CRASH DEL SISTEMA!")
     st.warning(f"Error detectado: {global_crash}")
-    try:
-        archivos_backup = [os.path.join(ruta_versiones, f) for f in os.listdir(ruta_versiones) if f.startswith("backup_") and f.endswith(".py")]
-        if archivos_backup:
-            backup_reciente = max(archivos_backup, key=os.path.getctime)
-            shutil.copy2(backup_reciente, ruta_codigo)
-            st.success(f"✅ Restaurado desde: {os.path.basename(backup_reciente)}")
-            st.info("🔄 PRESIONA F5 EN TU TECLADO PARA RECARGAR.")
-    except: pass
