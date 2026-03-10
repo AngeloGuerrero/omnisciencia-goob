@@ -30,21 +30,6 @@ os.makedirs(ruta_versiones, exist_ok=True)
 try:
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🚀", layout="wide")
 
-    # --- CSS MAGIA PARA ENCABEZADO FIJO ---
-    st.markdown("""
-        <style>
-            div[data-testid="stVerticalBlock"] > div:first-child {
-                position: sticky;
-                top: 0;
-                z-index: 999;
-                background-color: #0e1117;
-                padding-top: 1rem;
-                padding-bottom: 1rem;
-                border-bottom: 1px solid #333;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
     st.title("🧠 Omniscienc_IA")
     st.caption("Gerente Operativo de GOOB, GUBA y Neurodivergente A.C.")
     st.divider()
@@ -194,7 +179,6 @@ try:
                 content_for_chocho = str(d.get('content'))[:1000]
                 contexto_chocho += f"Archivo: {d.get('filename')} | Estado: {d.get('status')}\nTexto: {content_for_chocho}\n\n"
 
-        # ¡AQUÍ ESTÁ EL FIX DE LAS LLAVES DOBLES {{ }} !
         instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
         Manual: {manual_txt}
         Memoria: {memoria_txt}
