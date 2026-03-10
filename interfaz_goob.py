@@ -4,7 +4,7 @@ from google.genai import types
 import os, time, re, requests, json
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v7.0 (NÚCLEO OBSIDIANA) ---
+# --- CONFIGURACIÓN v7.1 (NÚCLEO OBSIDIANA) ---
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -12,7 +12,7 @@ def obtener_hora_gdl():
     return datetime.now(tz).strftime("%H:%M:%S %p")
 
 # --- UI CONFIG ---
-st.set_page_config(page_title="Skynet v7.0 BÚNKER", page_icon="🧬", layout="wide")
+st.set_page_config(page_title="Skynet v7.1 BÚNKER", page_icon="🧬", layout="wide")
 
 st.markdown("""
     <style>
@@ -21,22 +21,33 @@ st.markdown("""
     [data-testid="stChatMessageContent"] p { color: #ffffff !important; font-weight: bold; }
     .chocho-report { background-color: #001a00; color: #00ff41; padding: 20px; border: 2px solid #00ff41; border-radius: 5px; box-shadow: 0 0 15px #00ff41; }
     .stButton>button { background-color: #1a0000; color: #ff0000; border: 2px solid #ff0000; width: 100%; }
+    .metric-box { background-color: #111; padding: 10px; border-radius: 5px; border: 1px solid #333; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- SIDEBAR: MONITOR DE BÚNKER ---
 with st.sidebar:
-    st.title("💀 NÚCLEO v7.0")
+    st.title("💀 NÚCLEO v7.1")
     st.error("AUTORIDAD TOTAL EN J:")
     
+    # Lectura reforzada del estado de Chocho
     try:
-        r = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=2).json()
-        if r:
-            st.success(f"🟢 CHOCHO VIVO ({r.get('ts_human')})")
-            c1, c2 = st.columns(2)
-            c1.metric("Disco G (Op)", r.get('drive_g', '??'))
-            c2.metric("Disco J (Logs)", r.get('drive_j', '??'))
-    except: st.error("Sin pulso local.")
+        r_raw = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=2)
+        if r_raw.status_code == 200:
+            r = r_raw.json()
+            if r and isinstance(r, dict):
+                last_seen = r.get('last_seen', 0)
+                diff = time.time() - last_seen
+                
+                if diff < 15:
+                    st.success(f"🟢 CHOCHO VIVO ({r.get('ts_human', '??')})")
+                    c1, c2 = st.columns(2)
+                    c1.metric("Disco G (Op)", r.get('drive_g', '??'))
+                    c2.metric("Disco J (Logs)", r.get('drive_j', '??'))
+                else:
+                    st.error(f"🔴 CHOCHO DESCONECTADO ({int(diff)}s)")
+            else: st.warning("Esperando datos de Chocho...")
+    except: st.error("Error de conexión con Firebase.")
 
     st.divider()
     if st.button("☣️ PURGAR MEMORIA"):
@@ -50,7 +61,7 @@ with st.sidebar:
         st.success("Sello enviado a G:.")
 
 # --- INTERFAZ ---
-st.title("🦾 Skynet v7.0 (Búnker Central J:)")
+st.title("🦾 Skynet v7.1 (Búnker Central J:)")
 
 if "historial" not in st.session_state: st.session_state.historial = []
 if "esperando_chocho" not in st.session_state: st.session_state.esperando_chocho = False
@@ -66,10 +77,10 @@ if pregunta:
 
     client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
     sys_inst = (
-        "ERES EL NÚCLEO v7.0. TU BÚNKER ESTÁ EN J:/Mi unidad/OmnisciencIA_Chocho_Data.\n"
+        "ERES EL NÚCLEO v7.1. TU BÚNKER ESTÁ EN J:/Mi unidad/OmnisciencIA_Chocho_Data.\n"
         "TODOS LOS LOGS SE ESCRIBEN EN LA CARPETA /logs DEL DISCO J:.\n"
         "TU BRAZO EJECUTOR ES CHOCHO EN EL DISCO G:.\n"
-        "NO DES EXCUSAS. EJECUTA Y REPORTA."
+        "SIEMPRE RESPONDE USANDO EL REPORTE FÍSICO DE CHOCHO."
     )
     
     res = client.models.generate_content(
