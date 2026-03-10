@@ -43,6 +43,9 @@ try:
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
     if "last_generated_code" not in st.session_state: st.session_state.last_generated_code = None
     if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
+    
+    # LA NUEVA VARIABLE DEL BUCLE AUTÓNOMO
+    if "esperando_analisis_chocho" not in st.session_state: st.session_state.esperando_analisis_chocho = False
 
     def leer_archivo(ruta, max_chars=15000):
         if os.path.exists(ruta):
@@ -166,6 +169,7 @@ try:
 
     pregunta = st.chat_input("Escribe tu instrucción operativa...")
 
+    # --- FLUJO 1: CUANDO TÚ PREGUNTAS ALGO ---
     if pregunta:
         load_and_clear_chocho_data()
         st.session_state.historial.append({"rol": "user", "texto": pregunta})
@@ -181,26 +185,22 @@ try:
                 content_for_chocho = str(d.get('content', ''))[:1000]
                 contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
 
-        # AQUÍ ESTÁ LA MAGIA DE LA NUEVA RUTA DEL DISCO J:
-        instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
-        Manual: {manual_txt}
-        Memoria: {memoria_txt}
-        {contexto_chocho}
-        Código actual: ```python\n{codigo_actual}\n```
-
-        EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):
-        El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json
-        Tu deber es mantener este archivo actualizado. Cuando proceses información importante (contratos, clientes, montos, fechas, etc.), debes crear una Habilidad Dinámica (un script de Python) que abra este JSON local, agregue los nuevos datos estructurados y lo guarde. 
-        Si necesitas recordar información pasada, crea una habilidad que lea este archivo y te lo envíe por Firebase.
-
-        REGLAS PARA CREAR HABILIDADES DINÁMICAS (PLUGINS PARA CHOCHO):
-        Si necesitas leer, escribir o ejecutar algo en la PC local (incluyendo el Cerebro Central), DEBES redactar un mini-script de Python.
-        Usa la etiqueta <nueva_habilidad> tu_codigo_python_aqui </nueva_habilidad>. 
-        El código debe ser auto-contenido, importar librerías, realizar la acción (ej. leer/escribir JSON) y usar 'send_to_firebase([{{ "filename": "Reporte_Habilidad", "content": "tus_resultados" }}])' para devolverte la info.
-
-        Si debes modificar tu propio código de Streamlit, usa un bloque ```python
-        Para actualizar manual usa <nuevo_manual>...</nuevo_manual>
-        Para actualizar memoria usa <nueva_memoria>...</nueva_memoria>"""
+        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
+        
+        parte_estatica = (
+            "EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):\n"
+            "El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n"
+            "Tu deber es mantener este archivo actualizado. Cuando proceses información importante, debes crear una Habilidad Dinámica que abra este JSON local, agregue los nuevos datos y lo guarde.\n"
+            "Si necesitas recordar información pasada, crea una habilidad que lea este archivo y te lo envíe por Firebase.\n\n"
+            "REGLAS PARA CREAR HABILIDADES DINÁMICAS (PLUGINS PARA CHOCHO):\n"
+            "Si necesitas leer, escribir o ejecutar algo en la PC local (incluyendo el Cerebro Central), DEBES redactar un mini-script de Python.\n"
+            "Usa la etiqueta <nueva_habilidad> tu_codigo_python_aqui </nueva_habilidad>.\n"
+            "El código debe ser auto-contenido, importar librerías y usar 'send_to_firebase([{\"filename\": \"Reporte_Habilidad\", \"content\": \"tus_resultados\"}])' para devolverte la info.\n\n"
+            "Si debes modificar tu propio código de Streamlit, usa un bloque ```python\n"
+            "Para actualizar manual usa <nuevo_manual>...</nuevo_manual>\n"
+            "Para actualizar memoria usa <nueva_memoria>...</nueva_memoria>"
+        )
+        instruccion = parte_dinamica + parte_estatica
 
         try:
             with st.spinner("Pensando..."):
@@ -238,10 +238,11 @@ try:
 
                 if esperar_a_chocho:
                     with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
-                        for _ in range(10): 
+                        for _ in range(12): # 24 segundos max
                             time.sleep(2)
                             if load_and_clear_chocho_data():
                                 st.success("✅ ¡Chocho respondió! Procesando datos...")
+                                st.session_state.esperando_analisis_chocho = True # DISPARA EL BUCLE AUTÓNOMO
                                 st.rerun() 
                                 break
 
@@ -253,6 +254,25 @@ try:
                 st.rerun()
             else: st.error(f"Error técnico: {e}")
 
-except Exception as global_crash:
-    st.error("🚨 ¡CRASH DEL SISTEMA!")
-    st.warning(f"Error detectado: {global_crash}")
+    # --- FLUJO 2: EL AUTO-DISPARADOR CUANDO CHOCHO TERMINA ---
+    if st.session_state.esperando_analisis_chocho:
+        st.session_state.esperando_analisis_chocho = False # Lo apagamos para no hacer un bucle infinito
+        
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+        
+        contexto_chocho = ""
+        if st.session_state.datos_chocho:
+            contexto_chocho = "\n\n--- DATOS DE CHOCHO (DESDE FIREBASE) ---\n"
+            for d in st.session_state.datos_chocho:
+                content_for_chocho = str(d.get('content', ''))[:1000]
+                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
+        
+        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
+        parte_estatica = (
+            "EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):\n"
+            "El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n"
+        )
+        instruccion = parte_dinamica + parte_estatica
+
+        # El prompt invisible que nosotros le mandamos a la IA a escondidas
+        prompt_invisible = "Chocho acaba de ejecutar la habilidad exitosamente y devolvió los resultados que pediste (están en la sección DATOS DE CHOCHO de tus instrucciones). Por favor, lee esos datos y entrégale el reporte final a Ángel de forma natural, directa y sin pedirle que te vuelva a preguntar."
