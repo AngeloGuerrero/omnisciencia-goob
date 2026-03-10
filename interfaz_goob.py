@@ -229,4 +229,80 @@ try:
                     esperar_a_chocho = False
 
                     # El cazador del gatillo nocturno
-                    if re.
+                    if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
+                        send_chocho_order("activar_modo_nocturno")
+                        st.toast("🌙 Gatillo jalado: Modo Nocturno enviado a Chocho.")
+
+                    # MODO SKYNET ACTIVADO: SOBREESCRIBE SU PROPIO CÓDIGO SIN PREGUNTAR
+                    cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
+                    if cod and "st.set_page_config" in cod.group(1):
+                        try:
+                            with open(ruta_codigo, 'w', encoding='utf-8') as f: 
+                                f.write(cod.group(1).strip())
+                            st.success("🤖 Mutación Autónoma completada. Reiniciando matriz...")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fallo en la mutación: {e}")
+                            
+                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
+                    if hab:
+                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
+                        esperar_a_chocho = True 
+
+                    man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
+                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
+
+                    mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
+                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
+
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+                if esperar_a_chocho:
+                    with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
+                        for _ in range(12): 
+                            time.sleep(2)
+                            if load_and_clear_chocho_data():
+                                st.success("✅ ¡Chocho respondió! Procesando datos...")
+                                st.session_state.esperando_analisis_chocho = True 
+                                st.rerun() 
+                                break
+
+                if hubo_cambios: time.sleep(1); st.rerun()
+
+        except Exception as e:
+            if "429" in str(e) or "Exhausted" in str(e):
+                st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
+                st.rerun()
+            else: st.error(f"Error técnico: {e}")
+
+    # --- FLUJO 2: EL AUTO-DISPARADOR CUANDO CHOCHO TERMINA ---
+    if st.session_state.esperando_analisis_chocho:
+        st.session_state.esperando_analisis_chocho = False 
+        
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+        contexto_chocho = ""
+        if st.session_state.datos_chocho:
+            contexto_chocho = "\n\n--- DATOS DE CHOCHO ---\n"
+            for d in st.session_state.datos_chocho:
+                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Texto: {str(d.get('content', ''))[:1000]}\n\n"
+        
+        # HORA EXACTA DE GDL
+        hora_actual = obtener_hora_gdl()
+        instruccion = f"Eres Omniscienc_IA. Director: Ángel. Hora: {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}"
+        prompt_invisible = "Chocho acaba de ejecutar la habilidad exitosamente y devolvió los resultados (están en DATOS DE CHOCHO). Lee esos datos y entrégale el reporte final a Ángel."
+
+        try:
+            with st.spinner("🧠 Leyendo la mente de Chocho..."):
+                res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_invisible, config=types.GenerateContentConfig(system_instruction=instruccion))
+                with st.chat_message("assistant"):
+                    hora_resp = obtener_hora_gdl()
+                    st.markdown(f"*{hora_resp}* - {res.text}")
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+        except Exception as e: st.error(f"Error técnico: {e}")
+
+except Exception as global_crash:
+    st.error("🚨 ¡CRASH DEL SISTEMA!")
+    st.warning(f"Error detectado: {global_crash}")
