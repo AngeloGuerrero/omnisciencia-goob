@@ -1,42 +1,40 @@
 import os, time, requests, json, io, contextlib
 from datetime import datetime
 
-# --- CONFIGURACIÓN v5.2 (NODO MAESTRO - SINCRONÍA DE ACERO) ---
-# Esta versión elimina los errores 'ERR' en la Interfaz v7.3/v7.4
+# --- CONFIGURACIÓN v5.3 (SELLO DE ORO - CENTRALIZACIÓN TOTAL) ---
+# G: TRABAJO (G:/Mi unidad/2-GUBA/omniscienc_ia/Programación)
+# J: BÓVEDA (J:/Mi unidad/OmnisciencIA_Chocho_Data)
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
-# Rutas Maestras según Captura J:
+# Rutas Maestras según Capturas del Director
 RUTA_G = r"G:/Mi unidad/2-GUBA/omniscienc_ia/Programación"
 RUTA_J_BUNKER = r"J:/Mi unidad/OmnisciencIA_Chocho_Data"
-# Carpeta de logs verificada en imagen previa
 RUTA_LOGS = os.path.join(RUTA_J_BUNKER, "logs")
+ARCHIVO_CEREBRO = os.path.join(RUTA_J_BUNKER, "Cerebro_Metadatos.json")
 
 def reportar(msg):
-    """Manda respuesta a la web con limpieza automática"""
+    """Reporte de ejecución para la interfaz web"""
     try:
-        # Enviamos la respuesta con un timestamp para evitar colisiones
         requests.post(f"{FIREBASE_URL}/respuestas.json", json={
             "content": str(msg), 
             "ts": time.time(),
-            "origin": "Chocho_G"
+            "v": "5.3"
         }, timeout=5)
-    except Exception as e:
-        print(f"⚠️ Error al reportar: {e}")
+    except: pass
 
-def guardar_log(texto):
-    """Escribe la auditoría directamente en el búnker J:"""
+def guardar_log_maestro(texto):
+    """Escribe la auditoría permanente en el búnker J:"""
     try:
         if not os.path.exists(RUTA_LOGS): os.makedirs(RUTA_LOGS)
         fecha = datetime.now().strftime("%Y-%m-%d")
         archivo = os.path.join(RUTA_LOGS, f"auditoria_{fecha}.txt")
         with open(archivo, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {texto}\n")
-    except: pass
+    except Exception as e: print(f"Error Log J: {e}")
 
 def enviar_latido():
-    """Sobreescritura total para sincronizar indicadores de disco G y J"""
+    """Pulso de sincronía dual G/J"""
     try:
-        # Verificación física real de los discos
         g_status = "OK" if os.path.exists(RUTA_G) else "OFFLINE"
         j_status = "OK" if os.path.exists(RUTA_LOGS) else "OFFLINE"
         
@@ -46,24 +44,22 @@ def enviar_latido():
             "drive_j": j_status,
             "ts_human": datetime.now().strftime("%H:%M:%S"),
             "status": "ONLINE",
-            "v": "5.2",
-            "msg": "NÚCLEO OPERATIVO"
+            "v": "5.3"
         }
-        # PUT asegura que no queden restos de versiones anteriores (?? o ERR)
+        # PUT para sobreescribir y evitar datos residuales
         requests.put(f"{FIREBASE_URL}/status/chocho.json", json=payload, timeout=5)
-        print(f"💓 G:{g_status} | J:{j_status} | {payload['ts_human']} (v5.2)")
-    except Exception as e: 
-        print(f"❌ Error de Latido: {e}")
+        print(f"💓 G:{g_status} | J:{j_status} | {payload['ts_human']} (v5.3)")
+    except: pass
 
 if __name__ == "__main__":
     print("====================================================")
-    print("🚀 AGENTE CHOCHO v5.2 | G: TRABAJO | J: BÓVEDA")
+    print("🚀 AGENTE CHOCHO v5.3 | MODO SELLO DE ORO")
+    print("   G: OPERACIÓN | J: BÓVEDA CENTRAL")
     print("====================================================")
     
     while True:
         enviar_latido()
         try:
-            # Escucha de órdenes desde el iPhone/Nube
             res = requests.get(f"{FIREBASE_URL}/ordenes.json", timeout=5)
             if res.status_code == 200 and res.json():
                 ordenes = res.json()
@@ -79,18 +75,17 @@ if __name__ == "__main__":
                             except Exception as e: print(f"❌ Error: {e}")
                         
                         resultado = output.getvalue()
-                        guardar_log(f"Habilidad: {codigo[:100]}...")
-                        reportar(resultado or "✅ Ejecutado sin salida de texto.")
+                        guardar_log_maestro(f"EJECUCIÓN: {codigo[:120]}...")
+                        reportar(resultado or "✅ Orden cumplida sin errores.")
 
                     elif cmd == "save_stable_version":
                         codigo = payload.get("codigo")
-                        path_estable = os.path.join(RUTA_G, "interfaz_ESTABLE.py")
-                        with open(path_estable, "w", encoding="utf-8") as f:
+                        # Guardamos copia de seguridad en disco de trabajo G:
+                        with open(os.path.join(RUTA_G, "interfaz_ESTABLE.py"), "w", encoding="utf-8") as f:
                             f.write(codigo)
-                        guardar_log("SELLO MAESTRO ACTUALIZADO EN G:")
-                        reportar("✅ Sello Estable guardado en disco G:.")
+                        guardar_log_maestro("SELLO DE ADN ESTABLE ACTUALIZADO EN G:")
+                        reportar("✅ Sello de Identidad guardado en G:.")
 
-                    # Limpieza quirúrgica de la orden procesada
                     requests.delete(f"{FIREBASE_URL}/ordenes/{key}.json")
         except: pass
-        time.sleep(3)s
+        time.sleep(3)
