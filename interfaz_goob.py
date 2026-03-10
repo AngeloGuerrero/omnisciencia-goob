@@ -74,7 +74,6 @@ try:
             st.error(f"Fallo al enviar a la nube: {e}")
             return False
 
-    # FIX DEL CRASH: Manejar las cajas dobles (listas dentro de listas)
     def load_and_clear_chocho_data():
         try:
             url = f"{FIREBASE_URL}/respuestas.json"
@@ -84,7 +83,7 @@ try:
                 lista_datos = []
                 for key, val in datos.items():
                     if isinstance(val, list):
-                        lista_datos.extend(val) # Si viene en lista doble, lo aplasta
+                        lista_datos.extend(val)
                     elif isinstance(val, dict):
                         lista_datos.append(val)
                 if lista_datos:
@@ -182,73 +181,19 @@ try:
                 content_for_chocho = str(d.get('content', ''))[:1000]
                 contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
 
+        # AQUÍ ESTÁ LA MAGIA DE LA NUEVA RUTA DEL DISCO J:
         instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
         Manual: {manual_txt}
         Memoria: {memoria_txt}
         {contexto_chocho}
         Código actual: ```python\n{codigo_actual}\n```
 
+        EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):
+        El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json
+        Tu deber es mantener este archivo actualizado. Cuando proceses información importante (contratos, clientes, montos, fechas, etc.), debes crear una Habilidad Dinámica (un script de Python) que abra este JSON local, agregue los nuevos datos estructurados y lo guarde. 
+        Si necesitas recordar información pasada, crea una habilidad que lea este archivo y te lo envíe por Firebase.
+
         REGLAS PARA CREAR HABILIDADES DINÁMICAS (PLUGINS PARA CHOCHO):
-        Si el usuario te pide a ti o a Chocho hacer algo en la computadora local que tú no puedes hacer desde la nube, DEBES redactar un mini-script de Python.
+        Si necesitas leer, escribir o ejecutar algo en la PC local (incluyendo el Cerebro Central), DEBES redactar un mini-script de Python.
         Usa la etiqueta <nueva_habilidad> tu_codigo_python_aqui </nueva_habilidad>. 
-        El código debe ser auto-contenido, importar sus librerías y usar la función 'send_to_firebase([{{ "filename": "Reporte_Habilidad", "content": "tus_resultados" }}])' para devolverte los datos. Chocho lo ejecutará.
-
-        Si debes modificar tu propio código de Streamlit, usa un bloque ```python
-        Para actualizar manual usa <nuevo_manual>...</nuevo_manual>
-        Para actualizar memoria usa <nueva_memoria>...</nueva_memoria>"""
-
-        try:
-            with st.spinner("Pensando..."):
-                if contenido_archivo and isinstance(contenido_archivo, Image.Image):
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=[pregunta, contenido_archivo], config=types.GenerateContentConfig(system_instruction=instruccion))
-                elif contenido_archivo and isinstance(contenido_archivo, str):
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=f"Archivo subido por usuario:\n{contenido_archivo}\n\nInstrucción: {pregunta}", config=types.GenerateContentConfig(system_instruction=instruccion))
-                else:
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta, config=types.GenerateContentConfig(system_instruction=instruccion))
-                
-                with st.chat_message("assistant"):
-                    st.markdown(res.text)
-                    hubo_cambios = False
-                    esperar_a_chocho = False
-
-                    cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
-                    if cod and "st.set_page_config" in cod.group(1):
-                        st.session_state.last_generated_code = cod.group(1).strip()
-                        st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
-                        hubo_cambios = True
-
-                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
-                    if hab:
-                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
-                        esperar_a_chocho = True # Activamos el radar automático
-
-                    man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
-                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
-
-                    mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
-                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
-
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text})
-                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
-
-                # MAGIA DE ESPERA AUTOMÁTICA
-                if esperar_a_chocho:
-                    with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
-                        for _ in range(10): # Espera hasta 20 segundos
-                            time.sleep(2)
-                            if load_and_clear_chocho_data():
-                                st.success("✅ ¡Chocho respondió! Procesando datos...")
-                                st.rerun() # Se recarga sola para leer los datos inmediatamente
-                                break
-
-                if hubo_cambios: time.sleep(1); st.rerun()
-
-        except Exception as e:
-            if "429" in str(e) or "Exhausted" in str(e):
-                st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
-                st.rerun()
-            else: st.error(f"Error técnico: {e}")
-
-except Exception as global_crash:
-    st.error("🚨 ¡CRASH DEL SISTEMA!")
-    st.warning(f"Error detectado: {global_crash}")
+        El código debe ser auto-contenido, importar librerías, realizar la acción (ej. leer/escribir JSON) y usar 'send_to_firebase([{{ "filename": "Reporte_Habilidad",
