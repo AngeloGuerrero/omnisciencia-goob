@@ -4,15 +4,9 @@ from google.genai import types
 import os, time, re, json, requests
 from datetime import datetime, timedelta, timezone
 
-# --- IDENTIDAD SKYNET v3.7 ---
+# --- IDENTIDAD SKYNET v3.8 ---
 APP_ID = "omnisciencia-goob"
-ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_codigo = os.path.abspath(__file__)
-ruta_historial = os.path.join(ruta_raiz, "historial_chat.json")
-ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
-
-# RUTA MAESTRA DEL DISCO G:
-RUTA_ESTABLE_G = "G:/Mi unidad/2-GUBA/omniscienc_ia/Programación/interfaz_ESTABLE.py"
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -22,7 +16,7 @@ def obtener_hora_gdl():
 def enviar_latido():
     try:
         requests.put(f"{FIREBASE_URL}/status/skynet.json", 
-                     json={"last_heartbeat": time.time(), "status": "ALIVE", "v": "3.7"}, 
+                     json={"last_heartbeat": time.time(), "status": "ALIVE", "v": "3.8"}, 
                      timeout=3)
     except: pass
 
@@ -40,72 +34,69 @@ def cargar_respuestas_chocho():
         res = requests.get(url, timeout=5)
         if res.status_code == 200 and res.json():
             datos = list(res.json().values())
-            # Limpiamos para no leer lo mismo dos veces
             requests.delete(url)
             return datos
     except: pass
     return None
 
 # --- UI CONFIG ---
-st.set_page_config(page_title="Skynet v3.7", page_icon="🦾", layout="wide")
+st.set_page_config(page_title="Skynet v3.8", page_icon="🦾", layout="wide")
 enviar_latido()
 
 if "esperando" not in st.session_state: st.session_state.esperando = False
 
-# --- SIDEBAR ---
+# --- SIDEBAR: DIAGNÓSTICO ---
 with st.sidebar:
-    st.header("🧠 Núcleo v3.7")
-    st.success("📡 Sincronía: ACTIVA")
+    st.header("⚙️ Panel de Control v3.8")
     
+    # Verificar si Chocho local está vivo (Heartbeat de Chocho)
+    try:
+        st.subheader("📡 Estado Local")
+        beat_res = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=3).json()
+        if beat_res:
+            diff = time.time() - beat_res.get('last_seen', 0)
+            if diff < 60: st.success(f"Chocho: ONLINE (hace {int(diff)}s)")
+            else: st.warning(f"Chocho: DESCONECTADO (hace {int(diff)}s)")
+    except: st.error("No se pudo leer estado de Chocho")
+
+    st.divider()
     if st.button("🚀 RECONSTRUIR CHOCHO"):
-        dna = "import os, requests; exec(requests.get('https://raw.githubusercontent.com/AngeloGuerrero/omnisciencia-goob/main/Agente_Chocho_DNA.py').text)"
-        enviar_orden_chocho("ejecutar_habilidad", {"codigo": dna})
-        st.info("Inyección en curso...")
+        # Forzamos una inyección que además reporte éxito
+        dna_cmd = "import requests, os; c = requests.get('https://raw.githubusercontent.com/AngeloGuerrero/omnisciencia-goob/main/Agente_Chocho_DNA.py').text; exec(c)"
+        enviar_orden_chocho("ejecutar_habilidad", {"codigo": dna_cmd})
+        st.info("Inyectando nuevo ADN...")
 
     if st.button("📌 SELLAR ESTABLE"):
         with open(ruta_codigo, 'r', encoding='utf-8') as f: code = f.read()
         enviar_orden_chocho("save_stable_version", {"codigo": code})
         st.toast("Sello enviado.")
 
-# --- API KEYS ---
-try:
-    llaves = [st.secrets["api_keys"][f"llave_{i+1}"] for i in range(3)]
-    idx = st.session_state.get("indice_llave", 0)
-except:
-    st.error("Error en Secrets.")
-    st.stop()
-
 # --- CHAT ---
-st.title("🦾 Skynet v3.7 (Conexión Neuronal)")
-st.caption(f"Director: Ángel | Enlace Satelital | {obtener_hora_gdl()}")
+st.title("🦾 Skynet v3.8 (Diagnóstico)")
+st.caption(f"Director: Ángel | Enlace Directo | {obtener_hora_gdl()}")
 
 if "historial" not in st.session_state: st.session_state.historial = []
-
-for m in st.session_state.historial[-12:]:
+for m in st.session_state.historial[-10:]:
     with st.chat_message(m["rol"]): st.markdown(m["texto"])
 
-pregunta = st.chat_input("Escribe tu instrucción operativa...")
+pregunta = st.chat_input("Instrucción para el sistema...")
 
 if pregunta:
     enviar_latido()
     st.session_state.historial.append({"rol": "user", "texto": pregunta})
     with st.chat_message("user"): st.markdown(pregunta)
 
-    client = genai.Client(api_key=llaves[idx])
+    client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
     
-    # INSTRUCCIONES REFORZADAS PARA EVITAR ERRORES DE SINTAXIS
     sys_inst = (
-        f"ERES SKYNET v3.7. TU DIRECTOR ES ÁNGEL.\n"
-        f"RUTA DEL ARCHIVO ESTABLE: {RUTA_ESTABLE_G}\n"
-        "REGLA DE CÓDIGO:\n"
-        "1. Usa <nueva_habilidad> para enviar CÓDIGO PYTHON que Chocho ejecutará.\n"
-        "2. IMPORTANTE: Asegúrate de poner saltos de línea entre imports (ej: import os\\nimport time).\n"
-        "3. No uses texto plano, solo código ejecutable.\n"
-        "4. Tu respuesta debe ser proactiva y leal."
+        "ERES SKYNET v3.8. TU DIRECTOR ES ÁNGEL.\n"
+        "REGLA DE CÓDIGO: Cada instrucción 'import' debe ir en su propia línea.\n"
+        "Ejemplo correcto:\nimport os\nimport time\n"
+        "Usa <nueva_habilidad> para enviar código Python puro."
     )
 
     try:
-        with st.spinner("Omni procesando..."):
+        with st.spinner("Omni operando..."):
             res = client.models.generate_content(
                 model='gemini-2.5-flash', 
                 contents=pregunta, 
@@ -114,39 +105,33 @@ if pregunta:
             
             with st.chat_message("assistant"):
                 st.markdown(res.text)
-                
-                # Captura de habilidad
                 hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
                 if hab:
-                    codigo_sucio = hab.group(1).strip()
-                    # Limpiador de errores comunes de la IA
-                    codigo_limpio = codigo_sucio.replace("import os import", "import os\nimport")
-                    enviar_orden_chocho("ejecutar_habilidad", {"codigo": codigo_limpio})
+                    # Limpieza automática de errores de la IA
+                    clean_code = hab.group(1).strip().replace("import os import", "import os\nimport")
+                    enviar_orden_chocho("ejecutar_habilidad", {"codigo": clean_code})
                     st.session_state.esperando = True
 
             st.session_state.historial.append({"rol": "assistant", "texto": res.text})
-
     except Exception as e:
         st.error(f"Falla: {e}")
 
-# POLLING DE RESPUESTAS (VIGILANCIA ACTIVA)
+# POLLING DE RESPUESTAS
 if st.session_state.esperando:
-    with st.status("⏳ Esperando reporte de Chocho en el disco G:...", expanded=True) as status:
-        intentos = 0
-        while intentos < 15: # 15 intentos de 2 segundos cada uno
+    with st.status("🔍 Chocho está procesando en el disco G:...", expanded=True) as status:
+        for _ in range(20):
             resp = cargar_respuestas_chocho()
             if resp:
                 st.session_state.esperando = False
                 for r in resp:
-                    reporte = f"📢 **REPORTE DE CHOCHO:**\n{r.get('content')}"
-                    with st.chat_message("assistant"): st.markdown(reporte)
-                    st.session_state.historial.append({"rol": "assistant", "texto": reporte})
-                status.update(label="✅ Reporte Recibido", state="complete")
+                    msg = f"📢 **REPORTE FÍSICO:**\n{r.get('content')}"
+                    with st.chat_message("assistant"): st.markdown(msg)
+                    st.session_state.historial.append({"rol": "assistant", "texto": msg})
+                status.update(label="✅ Respuesta recibida", state="complete")
                 st.rerun()
                 break
             time.sleep(2)
-            intentos += 1
-        if intentos >= 15:
-            status.update(label="❌ Tiempo agotado (Chocho no respondió)", state="error")
+        else:
+            status.update(label="❌ Chocho no respondió a tiempo", state="error")
             st.session_state.esperando = False
 
