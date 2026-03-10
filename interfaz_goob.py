@@ -11,12 +11,10 @@ import shutil
 import datetime
 import json
 
-# --- RUTAS MAESTRAS ---
-ruta_raiz = r"G:\Mi unidad\2-GUBA\omniscienc_ia\Programación"
+# --- RUTAS MAESTRAS (Adaptadas a la Nube) ---
+ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_manual = os.path.join(ruta_raiz, "manual_guba.txt")
 ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
-ruta_excel = r"G:\Mi unidad\2-GUBA\Cotizaciones\Formato de cotizaciones GUBA.xlsm"
-ruta_fege = r"G:\Mi unidad\2-GUBA\Cotizaciones\FEGE"
 ruta_codigo = os.path.abspath(__file__)
 ruta_versiones = os.path.join(ruta_raiz, "Versiones")
 ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
@@ -24,7 +22,6 @@ ruta_puente_chocho = os.path.join(ruta_raiz, "chocho_datos_extraidos.json")
 ruta_ordenes_chocho = os.path.join(ruta_raiz, "omnisciencia_ordenes.json") 
 
 os.makedirs(ruta_versiones, exist_ok=True)
-os.makedirs(ruta_fege, exist_ok=True)
 
 try:
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🚀", layout="wide")
@@ -32,10 +29,11 @@ try:
     st.caption("Gerente Operativo de GOOB, GUBA y Neurodivergente A.C.")
     st.divider()
 
+    # --- LECTURA SEGURA DE LLAVES (SECRETS) ---
     MIS_LLAVES = [
-        "AIzaSyDy_IaOAwl4jpRY0hbBHK6UZoYb1dg_u3M",
-        "AIzaSyDenmdZO6-bkKS0pReNxh3IXD_OSuSNmuk",
-        "AIzaSyCOiyZ_WdbMzJfMe89tQ6EECDLyhePCOFE"
+        st.secrets["api_keys"]["llave_1"],
+        st.secrets["api_keys"]["llave_2"],
+        st.secrets["api_keys"]["llave_3"]
     ]
 
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
