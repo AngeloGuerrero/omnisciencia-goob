@@ -10,8 +10,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 
 # --- CONFIGURACIÓN DE IDENTIDAD ---
-# Skynet en la nube no puede ver tu disco G: directamente.
-# El Agente Chocho (Local) será el encargado de los backups reales.
+# Skynet en la nube. Chocho en local es el brazo ejecutor.
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_codigo = os.path.abspath(__file__)
 ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
@@ -21,20 +20,21 @@ ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
-    """Obtiene la hora exacta de Guadalajara (UTC-6) fija."""
+    """Hora exacta de Guadalajara (UTC-6)."""
     tz_gdl = timezone(timedelta(hours=-6))
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
 def enviar_latido():
-    """Protocolo Lázaro: Heartbeat para que Chocho sepa que Skynet vive."""
+    """Protocolo Lázaro: Informa a Chocho que la web sigue activa."""
     try:
         url = f"{FIREBASE_URL}/status/skynet.json"
         data = {
             "last_heartbeat": time.time(), 
             "hora": obtener_hora_gdl(), 
-            "status": "ALIVE"
+            "status": "ALIVE",
+            "msg": "Skynet operando desde la nube"
         }
-        requests.put(url, json=data, timeout=2)
+        requests.put(url, json=data, timeout=3)
     except:
         pass
 
@@ -51,10 +51,10 @@ def enviar_orden_chocho(comando, payload=None):
 
 try:
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
-    enviar_latido()
+    enviar_latido() # Latido al cargar la página
 
     st.title("🧠 Omniscienc_IA (Skynet Inmortal)")
-    st.caption("Ecosistema Autónomo - Sincronización Nube-Local Activa")
+    st.caption("Ecosistema de Alta Disponibilidad - Sincronización G: Activa")
     st.divider()
 
     # --- API KEYS ---
@@ -92,29 +92,29 @@ try:
                     st.session_state.historial = json.load(f)
             except: pass
 
-    # Mostrar historial limitado para evitar saturación
     for m in st.session_state.historial[-8:]:
         with st.chat_message(m["rol"]):
             st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
-    pregunta = st.chat_input("Escribe una instrucción operativa...")
+    pregunta = st.chat_input("Escribe tu instrucción operativa...")
 
     if pregunta:
-        enviar_latido()
+        enviar_latido() # Latido al interactuar
         hora_now = obtener_hora_gdl()
         st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_now})
         with st.chat_message("user"): st.markdown(f"*{hora_now}* - {pregunta}")
 
-        # Contexto reciente para curar la amnesia
+        # Contexto reciente
         ctx = "--- HISTORIAL RECIENTE ---\n"
         for m in st.session_state.historial[-5:-1]: ctx += f"{m['rol'].upper()}: {m['texto']}\n"
         
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
         
+        # System Instruction Blindada
         sys_inst = (
-            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora: {hora_now}.\n"
+            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora GDL: {hora_now}.\n"
             f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n"
-            f"Tu código fuente para auto-referencia:\n```python\n{codigo_actual}\n```\n"
+            f"Tu código fuente:\n```python\n{codigo_actual}\n```\n"
             "REGLAS:\n"
             "1. ORDEN LOCAL: <nueva_habilidad> codigo </nueva_habilidad>.\n"
             "2. MUTACIÓN SKYNET: <mutacion_skynet> codigo_completo </mutacion_skynet>.\n"
@@ -122,7 +122,7 @@ try:
         )
 
         try:
-            with st.spinner("Skynet procesando..."):
+            with st.spinner("Skynet pensando..."):
                 res = client.models.generate_content(
                     model='gemini-2.5-flash', 
                     contents=f"{ctx}\n\nMENSAJE: {pregunta}", 
@@ -136,37 +136,35 @@ try:
                     if "<activar_nocturno/>" in res.text: 
                         enviar_orden_chocho("activar_modo_nocturno")
 
-                    # MUTACIÓN (Con envío a Chocho para Backup Real en Disco G:)
+                    # MUTACIÓN (Backup real en G:)
                     sky = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
                     if sky:
                         nuevo_adn = sky.group(1).strip()
                         nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
                         if "st.set_page_config" in nuevo_adn:
-                            # 1. Aplicar en la nube
                             with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(nuevo_adn)
-                            # 2. Mandar a Chocho para guardado físico en G:
                             enviar_orden_chocho("save_local_backup", {
                                 "codigo": nuevo_adn, 
                                 "filename": f"auto_{time.strftime('%Y%m%d_%H%M%S')}.py"
                             })
-                            st.success("🤖 Mutación completada. Sincronizando respaldo físico...")
+                            st.success("🤖 Mutación completada.")
                             time.sleep(1)
                             st.rerun()
 
-                    # HABILIDAD PARA CHOCHO
+                    # HABILIDAD
                     hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
                     if hab:
                         code_hab = hab.group(1).strip()
                         code_hab = re.sub(r'^```python\n?|```$', '', code_hab, flags=re.MULTILINE).strip()
                         enviar_orden_chocho("ejecutar_habilidad", {"codigo": code_hab})
-                        st.toast("🚀 Habilidad enviada a Chocho.")
+                        st.toast("🚀 Habilidad enviada.")
 
                 st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: 
                     json.dump(st.session_state.historial, f, ensure_ascii=False)
 
         except Exception as e: 
-            st.error(f"Falla en la Matriz: {e}")
+            st.error(f"Error: {e}")
 
 except Exception as f: 
     st.error(f"🚨 CRASH: {f}")
