@@ -8,11 +8,11 @@ import os
 import time
 import re
 import shutil
-import datetime
 import json
 import requests
 from PIL import Image
 import io
+from datetime import datetime, timedelta, timezone
 
 # --- RUTAS MAESTRAS (Adaptadas a la Nube) ---
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
@@ -26,6 +26,11 @@ ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 os.makedirs(ruta_versiones, exist_ok=True)
+
+def obtener_hora_gdl():
+    """Calcula la hora exacta de Guadalajara (UTC-6) sin importar dónde esté el servidor"""
+    tz_gdl = timezone(timedelta(hours=-6))
+    return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
 try:
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🚀", layout="wide")
@@ -177,7 +182,9 @@ try:
     # --- FLUJO 1: CUANDO TÚ PREGUNTAS ALGO ---
     if pregunta:
         load_and_clear_chocho_data()
-        hora_actual = time.strftime("%I:%M %p") 
+        
+        # HORA EXACTA DE GDL
+        hora_actual = obtener_hora_gdl() 
         
         st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_actual})
         with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
@@ -215,91 +222,11 @@ try:
                     res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta, config=types.GenerateContentConfig(system_instruction=instruccion))
                 
                 with st.chat_message("assistant"):
-                    hora_resp = time.strftime("%I:%M %p")
+                    # HORA EXACTA DE GDL
+                    hora_resp = obtener_hora_gdl()
                     st.markdown(f"*{hora_resp}* - {res.text}")
                     hubo_cambios = False
                     esperar_a_chocho = False
 
                     # El cazador del gatillo nocturno
-                    if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
-                        send_chocho_order("activar_modo_nocturno")
-                        st.toast("🌙 Gatillo jalado: Modo Nocturno enviado a Chocho.")
-
-                   # cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
-                    #if cod and "st.set_page_config" in cod.group(1):
-                     #   st.session_state.last_generated_code = cod.group(1).strip()
-                      #  st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
-                       # hubo_cambios = True
-                    cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
-                    if cod and "st.set_page_config" in cod.group(1):
-                        # 🚨 MODO SKYNET ACTIVADO: SOBREESCRIBE SU PROPIO CÓDIGO SIN PREGUNTAR 🚨
-                        try:
-                            with open(ruta_codigo, 'w', encoding='utf-8') as f: 
-                                f.write(cod.group(1).strip())
-                            st.success("🤖 Mutación Autónoma completada. Reiniciando matriz...")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Fallo en la mutación: {e}")
-                            
-                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
-                    if hab:
-                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
-                        esperar_a_chocho = True 
-
-                    man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
-                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
-
-                    mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
-                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
-
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
-                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
-
-                if esperar_a_chocho:
-                    with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
-                        for _ in range(12): 
-                            time.sleep(2)
-                            if load_and_clear_chocho_data():
-                                st.success("✅ ¡Chocho respondió! Procesando datos...")
-                                st.session_state.esperando_analisis_chocho = True 
-                                st.rerun() 
-                                break
-
-                if hubo_cambios: time.sleep(1); st.rerun()
-
-        except Exception as e:
-            if "429" in str(e) or "Exhausted" in str(e):
-                st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
-                st.rerun()
-            else: st.error(f"Error técnico: {e}")
-
-    # --- FLUJO 2: EL AUTO-DISPARADOR CUANDO CHOCHO TERMINA ---
-    if st.session_state.esperando_analisis_chocho:
-        st.session_state.esperando_analisis_chocho = False 
-        
-        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
-        contexto_chocho = ""
-        if st.session_state.datos_chocho:
-            contexto_chocho = "\n\n--- DATOS DE CHOCHO ---\n"
-            for d in st.session_state.datos_chocho:
-                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Texto: {str(d.get('content', ''))[:1000]}\n\n"
-        
-        hora_actual = time.strftime("%I:%M %p")
-        instruccion = f"Eres Omniscienc_IA. Director: Ángel. Hora: {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}"
-        prompt_invisible = "Chocho acaba de ejecutar la habilidad exitosamente y devolvió los resultados (están en DATOS DE CHOCHO). Lee esos datos y entrégale el reporte final a Ángel."
-
-        try:
-            with st.spinner("🧠 Leyendo la mente de Chocho..."):
-                res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_invisible, config=types.GenerateContentConfig(system_instruction=instruccion))
-                with st.chat_message("assistant"):
-                    hora_resp = time.strftime("%I:%M %p")
-                    st.markdown(f"*{hora_resp}* - {res.text}")
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
-                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
-        except Exception as e: st.error(f"Error técnico: {e}")
-
-except Exception as global_crash:
-    st.error("🚨 ¡CRASH DEL SISTEMA!")
-    st.warning(f"Error detectado: {global_crash}")
-
+                    if re.
