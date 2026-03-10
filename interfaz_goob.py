@@ -44,7 +44,6 @@ try:
     if "last_generated_code" not in st.session_state: st.session_state.last_generated_code = None
     if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
     
-    # LA NUEVA VARIABLE DEL BUCLE AUTÓNOMO
     if "esperando_analisis_chocho" not in st.session_state: st.session_state.esperando_analisis_chocho = False
 
     def leer_archivo(ruta, max_chars=15000):
@@ -71,7 +70,7 @@ try:
             new_order = {"command": command, "timestamp": time.time()}
             if payload: new_order.update(payload)
             requests.post(url, json=new_order)
-            st.toast(f"✅ Comando/Habilidad '{command}' enviada al puente Firebase.", icon="🚀")
+            st.toast(f"✅ Comando '{command}' enviado al puente Firebase.", icon="🚀")
             return True
         except Exception as e:
             st.error(f"Fallo al enviar a la nube: {e}")
@@ -164,17 +163,25 @@ try:
                     if c: st.session_state.historial = json.loads(c)
             except: pass
 
+    # --- PINTAMOS LOS MENSAJES CON LA HORA ---
     for m in st.session_state.historial[-10:]:
-        with st.chat_message(m["rol"]): st.markdown(m["texto"])
+        with st.chat_message(m["rol"]): 
+            hora = m.get("hora", "")
+            if hora:
+                st.markdown(f"*{hora}* - {m['texto']}")
+            else:
+                st.markdown(m["texto"])
 
     pregunta = st.chat_input("Escribe tu instrucción operativa...")
 
     # --- FLUJO 1: CUANDO TÚ PREGUNTAS ALGO ---
     if pregunta:
         load_and_clear_chocho_data()
-        st.session_state.historial.append({"rol": "user", "texto": pregunta})
+        hora_actual = time.strftime("%I:%M %p") 
+        
+        st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_actual})
         with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
-        with st.chat_message("user"): st.markdown(pregunta)
+        with st.chat_message("user"): st.markdown(f"*{hora_actual}* - {pregunta}")
 
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
 
@@ -185,48 +192,38 @@ try:
                 content_for_chocho = str(d.get('content', ''))[:1000]
                 contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
 
-        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
+        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel. La hora actual del sistema es {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
         
         parte_estatica = (
-            "EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):\n"
-            "El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n"
-            "Tu deber es mantener este archivo actualizado. Cuando proceses información importante, debes crear una Habilidad Dinámica que abra este JSON local, agregue los nuevos datos y lo guarde.\n"
-            "Si necesitas recordar información pasada, crea una habilidad que lea este archivo y te lo envíe por Firebase.\n\n"
-            "REGLAS PARA CREAR HABILIDADES DINÁMICAS (PLUGINS PARA CHOCHO):\n"
-            "Si necesitas leer, escribir o ejecutar algo en la PC local (incluyendo el Cerebro Central), DEBES redactar un mini-script de Python.\n"
-            "Usa la etiqueta <nueva_habilidad> tu_codigo_python_aqui </nueva_habilidad>.\n"
-            "El código debe ser auto-contenido y usar 'send_to_firebase([{\"filename\": \"Reporte_Habilidad\", \"content\": \"tus_resultados\"}])' para devolverte la info.\n\n"
-            "Si debes modificar tu propio código de Streamlit, usa un bloque ```python\n"
-            "Para actualizar manual usa <nuevo_manual>...</nuevo_manual>\n"
-            "Para actualizar memoria usa <nueva_memoria>...</nueva_memoria>"
+            "EL CEREBRO CENTRAL DE METADATOS:\n"
+            "Ubicado en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n\n"
+            "REGLAS PARA HABILIDADES DINÁMICAS (PLUGINS CHOCHO):\n"
+            "Si necesitas leer, escribir o ejecutar algo localmente, usa un mini-script de Python dentro de <nueva_habilidad> tu_codigo </nueva_habilidad>. Usa 'send_to_firebase([{\"filename\": \"Reporte_Habilidad\", \"content\": \"tus_resultados\"}])' para devolver la info.\n\n"
+            "🚨 EL GATILLO NOCTURNO (MODO SUEÑO): 🚨\n"
+            "Si el usuario se despide para ir a dormir (ej. 'buenas noches', 'gudnite', 'ya me voy a jetear'), DEBES despedirte amablemente e INCLUIR EXACTAMENTE esta etiqueta en tu respuesta: <activar_nocturno/>\n"
+            "Esto disparará la investigación en segundo plano."
         )
         instruccion = parte_dinamica + parte_estatica
 
         try:
             with st.spinner("Pensando..."):
                 if contenido_archivo and isinstance(contenido_archivo, Image.Image):
-                    res = client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=[pregunta, contenido_archivo],
-                        config=types.GenerateContentConfig(system_instruction=instruccion)
-                    )
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=[pregunta, contenido_archivo], config=types.GenerateContentConfig(system_instruction=instruccion))
                 elif contenido_archivo and isinstance(contenido_archivo, str):
-                    res = client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=f"Archivo subido por usuario:\n{contenido_archivo}\n\nInstrucción: {pregunta}",
-                        config=types.GenerateContentConfig(system_instruction=instruccion)
-                    )
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=f"Archivo subido por usuario:\n{contenido_archivo}\n\nInstrucción: {pregunta}", config=types.GenerateContentConfig(system_instruction=instruccion))
                 else:
-                    res = client.models.generate_content(
-                        model='gemini-2.5-flash',
-                        contents=pregunta,
-                        config=types.GenerateContentConfig(system_instruction=instruccion)
-                    )
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta, config=types.GenerateContentConfig(system_instruction=instruccion))
                 
                 with st.chat_message("assistant"):
-                    st.markdown(res.text)
+                    hora_resp = time.strftime("%I:%M %p")
+                    st.markdown(f"*{hora_resp}* - {res.text}")
                     hubo_cambios = False
                     esperar_a_chocho = False
+
+                    # El cazador del gatillo nocturno
+                    if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
+                        send_chocho_order("activar_modo_nocturno")
+                        st.toast("🌙 Gatillo jalado: Modo Nocturno enviado a Chocho.")
 
                     cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
                     if cod and "st.set_page_config" in cod.group(1):
@@ -245,16 +242,16 @@ try:
                     mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
                     if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
 
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
 
                 if esperar_a_chocho:
                     with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
-                        for _ in range(12): # Espera hasta 24 segundos
+                        for _ in range(12): 
                             time.sleep(2)
                             if load_and_clear_chocho_data():
                                 st.success("✅ ¡Chocho respondió! Procesando datos...")
-                                st.session_state.esperando_analisis_chocho = True # DISPARA EL BUCLE AUTÓNOMO
+                                st.session_state.esperando_analisis_chocho = True 
                                 st.rerun() 
                                 break
 
@@ -268,43 +265,28 @@ try:
 
     # --- FLUJO 2: EL AUTO-DISPARADOR CUANDO CHOCHO TERMINA ---
     if st.session_state.esperando_analisis_chocho:
-        st.session_state.esperando_analisis_chocho = False # Lo apagamos para no hacer un bucle infinito
+        st.session_state.esperando_analisis_chocho = False 
         
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
-        
         contexto_chocho = ""
         if st.session_state.datos_chocho:
-            contexto_chocho = "\n\n--- DATOS DE CHOCHO (DESDE FIREBASE) ---\n"
+            contexto_chocho = "\n\n--- DATOS DE CHOCHO ---\n"
             for d in st.session_state.datos_chocho:
-                content_for_chocho = str(d.get('content', ''))[:1000]
-                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
+                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Texto: {str(d.get('content', ''))[:1000]}\n\n"
         
-        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
-        parte_estatica = (
-            "EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):\n"
-            "El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n"
-        )
-        instruccion = parte_dinamica + parte_estatica
-
-        # El mensaje que le inyectamos automáticamente a la IA
-        prompt_invisible = "Chocho acaba de ejecutar la habilidad exitosamente y devolvió los resultados que pediste (están en DATOS DE CHOCHO). Por favor, lee esos datos y entrégale el reporte final a Ángel de forma natural, directa y sin pedirle que te vuelva a preguntar."
+        hora_actual = time.strftime("%I:%M %p")
+        instruccion = f"Eres Omniscienc_IA. Director: Ángel. Hora: {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}"
+        prompt_invisible = "Chocho acaba de ejecutar la habilidad exitosamente y devolvió los resultados (están en DATOS DE CHOCHO). Lee esos datos y entrégale el reporte final a Ángel."
 
         try:
             with st.spinner("🧠 Leyendo la mente de Chocho..."):
-                res = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt_invisible,
-                    config=types.GenerateContentConfig(system_instruction=instruccion)
-                )
-                
+                res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_invisible, config=types.GenerateContentConfig(system_instruction=instruccion))
                 with st.chat_message("assistant"):
-                    st.markdown(res.text)
-                
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+                    hora_resp = time.strftime("%I:%M %p")
+                    st.markdown(f"*{hora_resp}* - {res.text}")
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
-                
-        except Exception as e:
-            st.error(f"Error técnico en el cierre autónomo: {e}")
+        except Exception as e: st.error(f"Error técnico: {e}")
 
 except Exception as global_crash:
     st.error("🚨 ¡CRASH DEL SISTEMA!")
