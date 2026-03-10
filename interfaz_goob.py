@@ -285,4 +285,10 @@ try:
                 with st.chat_message("assistant"):
                     hora_resp = obtener_hora_gdl()
                     st.markdown(f"*{hora_resp}* - {res.text}")
-                st.session_state.historial
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+        except Exception as e: st.error(f"Error técnico: {e}")
+
+except Exception as global_crash:
+    st.error("🚨 ¡CRASH DEL SISTEMA!")
+    st.warning(f"Error detectado: {global_crash}")
