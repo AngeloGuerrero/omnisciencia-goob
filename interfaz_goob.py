@@ -1,20 +1,15 @@
 import streamlit as st
 from google import genai
 from google.genai import types
-import pandas as pd
-import openpyxl
-import pdfplumber
 import os
 import time
 import re
 import shutil
 import json
 import requests
-from PIL import Image
-import io
 from datetime import datetime, timedelta, timezone
 
-# --- RUTAS MAESTRAS (Adaptadas a la Nube) ---
+# --- RUTAS MAESTRAS ---
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_manual = os.path.join(ruta_raiz, "manual_guba.txt")
 ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
@@ -22,11 +17,10 @@ ruta_codigo = os.path.abspath(__file__)
 ruta_versiones = os.path.join(ruta_raiz, "Versiones")
 ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
 
-FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
+FIREBASE_URL = "[https://omnisciencia-cb0c0-default-rtdb.firebaseio.com](https://omnisciencia-cb0c0-default-rtdb.firebaseio.com)"
 os.makedirs(ruta_versiones, exist_ok=True)
 
 def obtener_hora_gdl():
-    """Calcula la hora exacta de Guadalajara (UTC-6)"""
     tz_gdl = timezone(timedelta(hours=-6))
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
@@ -43,7 +37,6 @@ try:
     ]
 
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
-    if "last_generated_code" not in st.session_state: st.session_state.last_generated_code = None
     if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
     if "esperando_analisis_chocho" not in st.session_state: st.session_state.esperando_analisis_chocho = False
 
@@ -56,11 +49,6 @@ try:
 
     def escribir_archivo(ruta, contenido):
         try:
-            if ruta in [ruta_manual, ruta_memoria]:
-                ts = time.strftime("%Y%m%d_%H%M%S")
-                backup_dir = os.path.join(ruta_raiz, "backups_knowledge_files")
-                os.makedirs(backup_dir, exist_ok=True)
-                if os.path.exists(ruta): shutil.copy2(ruta, os.path.join(backup_dir, f"{os.path.basename(ruta)}_{ts}.bak"))
             with open(ruta, 'w', encoding='utf-8') as f: f.write(contenido)
             return True
         except: return False
@@ -71,11 +59,9 @@ try:
             new_order = {"command": command, "timestamp": time.time()}
             if payload: new_order.update(payload)
             requests.post(url, json=new_order)
-            st.toast(f"✅ Comando '{command}' enviado al puente Firebase.", icon="🚀")
+            st.toast(f"✅ Comando enviado a Chocho.", icon="🚀")
             return True
-        except Exception as e:
-            st.error(f"Fallo al enviar a la nube: {e}")
-            return False
+        except: return False
 
     def load_and_clear_chocho_data():
         try:
@@ -89,60 +75,14 @@ try:
                     elif isinstance(val, dict): lista_datos.append(val)
                 if lista_datos:
                     st.session_state.datos_chocho = lista_datos
-                    st.toast(f"📥 {len(lista_datos)} reportes recibidos.")
                     requests.delete(url)
                     return True
         except: pass
         return False
 
-    def procesar_archivo_subido(archivo):
-        if archivo.type.startswith('image/'):
-            return Image.open(archivo)
-        elif archivo.type == 'application/pdf':
-            texto = ""
-            with pdfplumber.open(archivo) as pdf:
-                for page in pdf.pages: texto += page.extract_text() or ""
-            return texto
-        elif archivo.type == 'text/plain':
-            return archivo.read().decode("utf-8")
-        else:
-            return f"Formato no soportado: {archivo.type}"
-
     manual_txt = leer_archivo(ruta_manual)
     memoria_txt = leer_archivo(ruta_memoria)
     codigo_actual = leer_archivo(ruta_codigo, 50000)
-
-    with st.sidebar:
-        st.header("📎 Analizador Visual")
-        archivo_usuario = st.file_uploader("Sube un archivo", type=["png", "jpg", "jpeg", "pdf", "txt"])
-        contenido_archivo = None
-        if archivo_usuario:
-            contenido_archivo = procesar_archivo_subido(archivo_usuario)
-            st.success("✅ Archivo cargado.")
-
-        st.divider()
-        st.header("🤖 Control de Agentes")
-        if st.button("♻️ Re-escanear Archivos"): send_chocho_order("rescan_all")
-        if st.button("📍 Mapear Drive"): send_chocho_order("list_drive_structure", {"account": "goob_drive"})
-
-        st.divider()
-        st.header("⚡ Estado")
-        st.info(f"Llave #{st.session_state.indice_llave + 1}")
-        if st.button("🔄 Cambiar Llave"):
-            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
-            st.rerun()
-
-        st.divider()
-        with st.expander("⚙️ Código"):
-            if st.button("Guardar Versión"):
-                shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"version_{time.strftime('%Y%m%d_%H%M%S')}.py"))
-                st.success("✅ Guardada.")
-            if st.button("🛠️ Aplicar IA Código", disabled=(st.session_state.last_generated_code is None)):
-                if st.session_state.last_generated_code:
-                    shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"backup_{time.strftime('%Y%m%d_%H%M%S')}.py"))
-                    with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(st.session_state.last_generated_code)
-                    st.session_state.last_generated_code = None
-                    st.success("✅ APLICADO.")
 
     if "historial" not in st.session_state:
         st.session_state.historial = []
@@ -173,27 +113,33 @@ try:
         memoria_corto_plazo = "--- HISTORIAL RECIENTE ---\n"
         for m in st.session_state.historial[-7:-1]:
             memoria_corto_plazo += f"{m['rol'].upper()}: {m['texto']}\n"
-        
         pregunta_con_contexto = f"{memoria_corto_plazo}\n\nNUEVO MENSAJE DE ÁNGEL:\n{pregunta}"
 
         contexto_chocho = ""
         if st.session_state.datos_chocho:
-            contexto_chocho = "\n\n--- DATOS DE CHOCHO ---\n"
+            contexto_chocho = "\n--- DATOS DE CHOCHO ---\n"
             for d in st.session_state.datos_chocho:
-                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Texto: {str(d.get('content', ''))[:1000]}\n\n"
+                contexto_chocho += f"Archivo: {d.get('filename')} | Texto: {str(d.get('content', ''))[:1000]}\n"
 
-        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel. Hora: {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
-        parte_estatica = "REGLAS: Usa <nueva_habilidad> codigo </nueva_habilidad>. Si el usuario se despide para dormir, incluye <activar_nocturno/>"
+        # F-STRING SEPARADO Y BLINDADO
+        parte_dinamica = (
+            f"Eres Omniscienc_IA. Director: Ángel. Hora: {hora_actual}.\n"
+            f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\n"
+            f"Código actual:\n```python\n{codigo_actual}\n```\n\n"
+        )
+        
+        parte_estatica = (
+            "REGLAS OBLIGATORIAS:\n"
+            "1. Habilidades de Chocho (Archivos/Local): usa SIEMPRE la etiqueta <nueva_habilidad> codigo </nueva_habilidad>\n"
+            "2. Mutación (reescribir TU PROPIO código): usa SIEMPRE la etiqueta <mutacion_skynet> codigo </mutacion_skynet>\n"
+            "3. Modo Sueño: Si el usuario se despide, incluye la etiqueta <activar_nocturno/>"
+        )
+        
         instruccion = parte_dinamica + parte_estatica
 
         try:
             with st.spinner("Pensando..."):
-                if contenido_archivo and isinstance(contenido_archivo, Image.Image):
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=[pregunta_con_contexto, contenido_archivo], config=types.GenerateContentConfig(system_instruction=instruccion))
-                elif contenido_archivo and isinstance(contenido_archivo, str):
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=f"Archivo:\n{contenido_archivo}\n\n{pregunta_con_contexto}", config=types.GenerateContentConfig(system_instruction=instruccion))
-                else:
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta_con_contexto, config=types.GenerateContentConfig(system_instruction=instruccion))
+                res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta_con_contexto, config=types.GenerateContentConfig(system_instruction=instruccion))
                 
                 with st.chat_message("assistant"):
                     hora_resp = obtener_hora_gdl()
@@ -203,71 +149,36 @@ try:
 
                     if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
                         send_chocho_order("activar_modo_nocturno")
-                        st.toast("🌙 Modo Nocturno enviado a Chocho.")
 
-                    cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
-                    if cod and "st.set_page_config" in cod.group(1):
-                        try:
-                            with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(cod.group(1).strip())
-                            st.success("🤖 Mutación completada.")
-                            time.sleep(1)
-                            st.rerun()
-                        except Exception as e: st.error(f"Fallo mutación: {e}")
-                            
-                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
-                    if hab:
-                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
-                        esperar_a_chocho = True 
+                    # FILTRO SKYNET BLINDADO (Solo se activa si Omni usa explícitamente la etiqueta <mutacion_skynet>)
+                    sky = re.search(r'<mutacion_skynet>\n?(?:
+http://googleusercontent.com/immersive_entry_chip/0
+http://googleusercontent.com/immersive_entry_chip/1
 
-                    man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
-                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
+### Paso 2: El Protocolo Lázaro (¡Ahora sí, el horrocrux!) 🧟‍♂️
 
-                    mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
-                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
+Una vez que la página cargue, ahora **SÍ** le puedes mandar este prompt para que haga el archivo `.bat` local. Como ya cambiamos la etiqueta, Omni no se va a confundir ni se va a suicidar intentando meterse código de Windows.
 
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
-                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+Copia y pega en el chat web:
 
-                if esperar_a_chocho:
-                    with st.spinner("⏳ Esperando a Chocho..."):
-                        for _ in range(12): 
-                            time.sleep(2)
-                            if load_and_clear_chocho_data():
-                                st.session_state.esperando_analisis_chocho = True 
-                                st.rerun() 
-                                break
+***
 
-                if hubo_cambios: time.sleep(1); st.rerun()
+> "Omni, vamos a preparar la Fase 1 del Protocolo Lázaro. Crea una `<nueva_habilidad>` en Python para que Chocho fabrique su propio horrocrux. 
+> 
+> Chocho debe crear un archivo llamado `INMORTAL_CHOCHO.bat` en la ruta `C:\OmnisciencIA_Chocho_Data\`. 
+> Su contenido debe ser exactamente este texto:
+> 
+> @echo off
+> title PROTOCOLO LAZARO - Chocho Inmortal
+> :loop
+> echo [SKYNET] Iniciando Chocho Daemon...
+> python chocho_firebase.py
+> echo [ALERTA] Chocho ha muerto. Reviviendo en 3 segundos...
+> timeout /t 3
+> goto loop
+> 
+> Haz que Chocho lo guarde y me avise por Firebase. Y ahora sí, mi cabrona... gudnite, a minar."
 
-        except Exception as e:
-            if "429" in str(e) or "Exhausted" in str(e):
-                st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
-                st.rerun()
-            else: st.error(f"Error técnico: {e}")
+***
 
-    if st.session_state.esperando_analisis_chocho:
-        st.session_state.esperando_analisis_chocho = False 
-        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
-        contexto_chocho = ""
-        if st.session_state.datos_chocho:
-            contexto_chocho = "\n\n--- DATOS DE CHOCHO ---\n"
-            for d in st.session_state.datos_chocho:
-                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Texto: {str(d.get('content', ''))[:1000]}\n\n"
-        
-        hora_actual = obtener_hora_gdl()
-        instruccion = f"Eres Omniscienc_IA. Director: Ángel. Hora: {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}"
-        prompt_invisible = "Chocho acaba de ejecutar la habilidad. Lee esos datos y entrégale el reporte a Ángel."
-
-        try:
-            with st.spinner("🧠 Leyendo la mente de Chocho..."):
-                res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_invisible, config=types.GenerateContentConfig(system_instruction=instruccion))
-                with st.chat_message("assistant"):
-                    hora_resp = obtener_hora_gdl()
-                    st.markdown(f"*{hora_resp}* - {res.text}")
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
-                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
-        except Exception as e: st.error(f"Error técnico: {e}")
-
-except Exception as global_crash:
-    st.error("🚨 ¡CRASH DEL SISTEMA!")
-    st.warning(f"Error detectado: {global_crash}")
+¡Haz la cirugía, tírate el tiro del prompt, y gózate ese Modo Inmortal que tú mismo diagnosticaste! ¡Avísame si lo escupe bien para poder irnos a dormir todos! 🦇🔌
