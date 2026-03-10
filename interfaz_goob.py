@@ -9,17 +9,16 @@ import json
 import requests
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN DE IDENTIDAD Y RUTAS ---
-APP_ID = "omnisciencia-goob"
+# --- CONFIGURACIÓN DE IDENTIDAD ---
+# Skynet en la nube no puede ver tu disco G: directamente.
+# El Agente Chocho (Local) será el encargado de los backups reales.
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
+ruta_codigo = os.path.abspath(__file__)
+ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
 ruta_manual = os.path.join(ruta_raiz, "manual_guba.txt")
 ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
-ruta_codigo = os.path.abspath(__file__)
-ruta_versiones = os.path.join(ruta_raiz, "Versiones")
-ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
 
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
-os.makedirs(ruta_versiones, exist_ok=True)
 
 def obtener_hora_gdl():
     """Hora exacta de Guadalajara (UTC-6)."""
@@ -27,59 +26,62 @@ def obtener_hora_gdl():
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
 def enviar_latido():
-    """Protocolo Lázaro: Informa a Chocho que Skynet sigue viva (Heartbeat Optimizado)."""
+    """Protocolo Lázaro: Heartbeat para que Chocho sepa que Skynet vive."""
     try:
         url = f"{FIREBASE_URL}/status/skynet.json"
         data = {
             "last_heartbeat": time.time(), 
             "hora": obtener_hora_gdl(), 
-            "status": "ALIVE",
-            "server": "Streamlit Cloud"
+            "status": "ALIVE"
         }
-        # Timeout ultra-corto para no trabar la interfaz
-        requests.put(url, json=data, timeout=1.5)
+        requests.put(url, json=data, timeout=2)
     except:
         pass
 
+def enviar_orden_chocho(comando, payload=None):
+    """Envía comandos al trabajador local."""
+    try:
+        url = f"{FIREBASE_URL}/ordenes.json"
+        data = {"command": comando, "timestamp": time.time()}
+        if payload: data.update(payload)
+        requests.post(url, json=data, timeout=5)
+        return True
+    except:
+        return False
+
 try:
-    # --- INICIO DE SISTEMA ---
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
-    
-    # Latido vital al arranque
-    enviar_latido() 
+    enviar_latido()
 
     st.title("🧠 Omniscienc_IA (Skynet Inmortal)")
-    st.caption("Ecosistema de Alta Disponibilidad - Protocolo Lázaro Balanceado")
-    
-    # --- PANEL DE CONTROL SIDEBAR ---
-    with st.sidebar:
-        st.header("🎮 Centro de Control")
-        st.info(f"📍 Zona Horaria: Guadalajara\n⏰ {obtener_hora_gdl()}")
-        
-        if st.button("♻️ Rescan Archivos"): 
-            enviar_latido()
-            send_chocho_order("rescan_all")
-            
-        st.divider()
-        if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
-        st.info(f"⚡ Matriz: Llave #{st.session_state.indice_llave + 1}")
-        
-        if st.button("🔄 Rotar API Key"):
-            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % 3
-            st.rerun()
+    st.caption("Ecosistema Autónomo - Sincronización Nube-Local Activa")
+    st.divider()
+
+    # --- API KEYS ---
+    MIS_LLAVES = [st.secrets["api_keys"][f"llave_{i+1}"] for i in range(3)]
+    if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
 
     # --- CARGA DE CONTEXTO ---
-    def leer_archivo(ruta, max_chars=15000):
+    def leer_txt(ruta):
         if os.path.exists(ruta):
-            try:
-                with open(ruta, 'r', encoding='utf-8', errors='ignore') as f:
-                    return f.read()[-max_chars:]
-            except: return "Error."
+            with open(ruta, 'r', encoding='utf-8', errors='ignore') as f: return f.read()[-15000:]
         return "Vacío."
 
-    manual_txt = leer_archivo(ruta_manual)
-    memoria_txt = leer_archivo(ruta_memoria)
-    codigo_actual = leer_archivo(ruta_codigo, 30000)
+    manual_txt = leer_txt(ruta_manual)
+    memoria_txt = leer_txt(ruta_memoria)
+    with open(ruta_codigo, 'r', encoding='utf-8') as f: codigo_actual = f.read()
+
+    # --- SIDEBAR ---
+    with st.sidebar:
+        st.header("🎮 Centro de Mando")
+        if st.button("♻️ Rescan Local"): enviar_orden_chocho("rescan_all")
+        if st.button("📍 Mapear Drive"): enviar_orden_chocho("list_drive_structure")
+        
+        st.divider()
+        st.info(f"⚡ Matriz: Llave #{st.session_state.indice_llave + 1}")
+        if st.button("🔄 Rotar Llave"):
+            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % 3
+            st.rerun()
 
     # --- CHAT ---
     if "historial" not in st.session_state:
@@ -94,73 +96,64 @@ try:
         with st.chat_message(m["rol"]):
             st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
-    pregunta = st.chat_input("Escribe tu instrucción operativa...")
+    pregunta = st.chat_input("Escribe una instrucción...")
 
     if pregunta:
         enviar_latido()
         hora_now = obtener_hora_gdl()
         st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_now})
-        
         with st.chat_message("user"): st.markdown(f"*{hora_now}* - {pregunta}")
 
-        # Memoria Corto Plazo
-        ctx_reciente = "--- HISTORIAL RECIENTE ---\n"
-        for m in st.session_state.historial[-5:-1]:
-            ctx_reciente += f"{m['rol'].upper()}: {m['texto']}\n"
+        # Contexto
+        ctx = "--- HISTORIAL RECIENTE ---\n"
+        for m in st.session_state.historial[-5:-1]: ctx += f"{m['rol'].upper()}: {m['texto']}\n"
         
-        prompt_full = f"{ctx_reciente}\n\nNUEVO MENSAJE:\n{pregunta}"
-
-        llave = st.secrets["api_keys"][f"llave_{st.session_state.indice_llave + 1}"]
-        client = genai.Client(api_key=llave)
-
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+        
         sys_inst = (
-            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora GDL: {hora_now}.\n"
+            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora: {hora_now}.\n"
             f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n"
             f"Tu código fuente:\n```python\n{codigo_actual}\n```\n"
-            "REGLAS: Habilidad Chocho: <nueva_habilidad>, Mutación: <mutacion_skynet>, Sueño: <activar_nocturno/>"
+            "REGLAS:\n"
+            "1. ORDEN LOCAL: <nueva_habilidad> codigo </nueva_habilidad>.\n"
+            "2. MUTACIÓN: <mutacion_skynet> codigo_completo </mutacion_skynet>.\n"
+            "3. MODO SUEÑO: <activar_nocturno/>"
         )
 
         try:
-            with st.spinner("Skynet pensando..."):
-                res = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=prompt_full,
-                    config=types.GenerateContentConfig(system_instruction=sys_inst)
-                )
+            with st.spinner("Pensando..."):
+                res = client.models.generate_content(model='gemini-2.5-flash', contents=f"{ctx}\n\nMENSAJE: {pregunta}", config=types.GenerateContentConfig(system_instruction=sys_inst))
                 
                 with st.chat_message("assistant"):
                     hora_resp = obtener_hora_gdl()
                     st.markdown(f"*{hora_resp}* - {res.text}")
                     
-                    if "<activar_nocturno/>" in res.text:
-                        url = f"{FIREBASE_URL}/ordenes.json"
-                        requests.post(url, json={"command": "activar_modo_nocturno", "timestamp": time.time()})
+                    if "<activar_nocturno/>" in res.text: enviar_orden_chocho("activar_modo_nocturno")
 
-                    # MUTACIÓN SKYNET
-                    sky_match = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
-                    if sky_match:
-                        nuevo_adn = sky_match.group(1).strip()
+                    # MUTACIÓN (Con envío a Chocho para Backup Real)
+                    sky = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
+                    if sky:
+                        nuevo_adn = sky.group(1).strip()
                         nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
-                        with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(nuevo_adn)
-                        st.success("🤖 ADN Mutado.")
-                        time.sleep(1)
-                        st.rerun()
+                        if "st.set_page_config" in nuevo_adn:
+                            # 1. Guardar en la nube (para el rerun inmediato)
+                            with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(nuevo_adn)
+                            # 2. MANDAR A CHOCHO PARA BACKUP REAL EN DISCO G:
+                            enviar_orden_chocho("save_local_backup", {"codigo": nuevo_adn, "filename": f"auto_{time.strftime('%H%M%S')}.py"})
+                            st.success("🤖 Mutación completada. Sincronizando con Chocho...")
+                            time.sleep(1)
+                            st.rerun()
 
-                    # HABILIDAD CHOCHO
-                    hab_match = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
-                    if hab_match:
-                        code_hab = hab_match.group(1).strip()
+                    # HABILIDAD
+                    hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
+                    if hab:
+                        code_hab = hab.group(1).strip()
                         code_hab = re.sub(r'^```python\n?|```$', '', code_hab, flags=re.MULTILINE).strip()
-                        url = f"{FIREBASE_URL}/ordenes.json"
-                        requests.post(url, json={"command": "ejecutar_habilidad", "codigo": code_hab, "timestamp": time.time()})
-                        st.toast("🚀 Habilidad enviada a Chocho.")
+                        enviar_orden_chocho("ejecutar_habilidad", {"codigo": code_hab})
 
                 st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
-                with open(ruta_historial_chat, 'w', encoding='utf-8') as f:
-                    json.dump(st.session_state.historial, f, ensure_ascii=False)
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
 
-        except Exception as e:
-            st.error(f"Error: {e}")
+        except Exception as e: st.error(f"Error: {e}")
 
-except Exception as fatal:
-    st.error(f"🚨 CRASH: {fatal}")
+except Exception as f: st.error(f"CRASH: {f}")
