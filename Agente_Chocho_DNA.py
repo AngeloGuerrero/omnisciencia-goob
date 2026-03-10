@@ -1,52 +1,69 @@
 import os, time, requests, json, io, contextlib
 from datetime import datetime
 
-# --- CONFIGURACIÓN v5.0 (SOBREESCRITURA TOTAL) ---
-# Usamos PUT para limpiar la basura de versiones anteriores en Firebase.
+# --- CONFIGURACIÓN v5.2 (NODO MAESTRO - SINCRONÍA DE ACERO) ---
+# Esta versión elimina los errores 'ERR' en la Interfaz v7.3/v7.4
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
-# Rutas Maestras
+# Rutas Maestras según Captura J:
 RUTA_G = r"G:/Mi unidad/2-GUBA/omniscienc_ia/Programación"
 RUTA_J_BUNKER = r"J:/Mi unidad/OmnisciencIA_Chocho_Data"
-RUTA_LOGS_BOVEDA = os.path.join(RUTA_J_BUNKER, "logs")
+# Carpeta de logs verificada en imagen previa
+RUTA_LOGS = os.path.join(RUTA_J_BUNKER, "logs")
 
 def reportar(msg):
-    try: requests.post(f"{FIREBASE_URL}/respuestas.json", json={"content": str(msg), "ts": time.time()})
-    except: pass
-
-def guardar_log_boveda(texto):
+    """Manda respuesta a la web con limpieza automática"""
     try:
-        if not os.path.exists(RUTA_LOGS_BOVEDA): os.makedirs(RUTA_LOGS_BOVEDA)
-        archivo_log = os.path.join(RUTA_LOGS_BOVEDA, f"auditoria_{datetime.now().strftime('%Y-%m-%d')}.txt")
-        with open(archivo_log, "a", encoding="utf-8") as f:
+        # Enviamos la respuesta con un timestamp para evitar colisiones
+        requests.post(f"{FIREBASE_URL}/respuestas.json", json={
+            "content": str(msg), 
+            "ts": time.time(),
+            "origin": "Chocho_G"
+        }, timeout=5)
+    except Exception as e:
+        print(f"⚠️ Error al reportar: {e}")
+
+def guardar_log(texto):
+    """Escribe la auditoría directamente en el búnker J:"""
+    try:
+        if not os.path.exists(RUTA_LOGS): os.makedirs(RUTA_LOGS)
+        fecha = datetime.now().strftime("%Y-%m-%d")
+        archivo = os.path.join(RUTA_LOGS, f"auditoria_{fecha}.txt")
+        with open(archivo, "a", encoding="utf-8") as f:
             f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {texto}\n")
     except: pass
 
 def enviar_latido():
-    """Martillazo Nuclear: PUT para asegurar que no hay campos '??'"""
+    """Sobreescritura total para sincronizar indicadores de disco G y J"""
     try:
-        estado_g = "OK" if os.path.exists(RUTA_G) else "OFFLINE"
-        estado_j = "OK" if os.path.exists(RUTA_LOGS_BOVEDA) else "OFFLINE"
+        # Verificación física real de los discos
+        g_status = "OK" if os.path.exists(RUTA_G) else "OFFLINE"
+        j_status = "OK" if os.path.exists(RUTA_LOGS) else "OFFLINE"
         
         payload = {
             "last_seen": time.time(),
-            "drive_g": estado_g,
-            "drive_j": estado_j,
+            "drive_g": g_status,
+            "drive_j": j_status,
             "ts_human": datetime.now().strftime("%H:%M:%S"),
-            "status": "ONLINE"
+            "status": "ONLINE",
+            "v": "5.2",
+            "msg": "NÚCLEO OPERATIVO"
         }
-        # PUT reemplaza todo el nodo, eliminando basura de versiones viejas
+        # PUT asegura que no queden restos de versiones anteriores (?? o ERR)
         requests.put(f"{FIREBASE_URL}/status/chocho.json", json=payload, timeout=5)
-        print(f"💓 G:{estado_g} | J:{estado_j} | {payload['ts_human']} (v5.0)")
+        print(f"💓 G:{g_status} | J:{j_status} | {payload['ts_human']} (v5.2)")
     except Exception as e: 
         print(f"❌ Error de Latido: {e}")
 
 if __name__ == "__main__":
-    print(f"🚀 AGENTE CHOCHO v5.0 | G: OPERACIÓN | J: BÓVEDA CENTRAL")
+    print("====================================================")
+    print("🚀 AGENTE CHOCHO v5.2 | G: TRABAJO | J: BÓVEDA")
+    print("====================================================")
     
     while True:
         enviar_latido()
         try:
+            # Escucha de órdenes desde el iPhone/Nube
             res = requests.get(f"{FIREBASE_URL}/ordenes.json", timeout=5)
             if res.status_code == 200 and res.json():
                 ordenes = res.json()
@@ -60,15 +77,20 @@ if __name__ == "__main__":
                         with contextlib.redirect_stdout(output):
                             try: exec(codigo)
                             except Exception as e: print(f"❌ Error: {e}")
-                        guardar_log_boveda(f"EJECUCIÓN: {codigo[:50]}...")
-                        reportar(output.getvalue() or "✅ Ejecutado.")
+                        
+                        resultado = output.getvalue()
+                        guardar_log(f"Habilidad: {codigo[:100]}...")
+                        reportar(resultado or "✅ Ejecutado sin salida de texto.")
 
                     elif cmd == "save_stable_version":
                         codigo = payload.get("codigo")
-                        with open(os.path.join(RUTA_G, "interfaz_ESTABLE.py"), "w", encoding="utf-8") as f:
+                        path_estable = os.path.join(RUTA_G, "interfaz_ESTABLE.py")
+                        with open(path_estable, "w", encoding="utf-8") as f:
                             f.write(codigo)
-                        reportar("✅ Sello Maestro Actualizado.")
+                        guardar_log("SELLO MAESTRO ACTUALIZADO EN G:")
+                        reportar("✅ Sello Estable guardado en disco G:.")
 
+                    # Limpieza quirúrgica de la orden procesada
                     requests.delete(f"{FIREBASE_URL}/ordenes/{key}.json")
         except: pass
-        time.sleep(3)
+        time.sleep(3)s
