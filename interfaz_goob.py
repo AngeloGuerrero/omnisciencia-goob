@@ -113,3 +113,172 @@ try:
         elif archivo.type == 'text/plain':
             return archivo.read().decode("utf-8")
         else:
+            return f"Formato no soportado: {archivo.type}"
+
+    manual_txt = leer_archivo(ruta_manual)
+    memoria_txt = leer_archivo(ruta_memoria)
+    codigo_actual = leer_archivo(ruta_codigo, 50000)
+
+    with st.sidebar:
+        st.header("📎 Analizador Visual")
+        archivo_usuario = st.file_uploader("Sube una imagen o archivo para Omniscienc_IA", type=["png", "jpg", "jpeg", "pdf", "txt"])
+        contenido_archivo = None
+        if archivo_usuario:
+            contenido_archivo = procesar_archivo_subido(archivo_usuario)
+            st.success("✅ Archivo cargado. Haz tu pregunta en el chat.")
+
+        st.divider()
+        st.header("🤖 Control de Agentes (Chocho)")
+        if st.button("♻️ Re-escanear Archivos"):
+            send_chocho_order("rescan_all")
+        if st.button("📍 Mapear Carpetas de Drive"):
+            send_chocho_order("list_drive_structure", {"account": "goob_drive"})
+            st.info("Orden enviada a la nube.")
+
+        st.divider()
+        st.header("⚡ Estado del Sistema")
+        st.info(f"Usando Llave #{st.session_state.indice_llave + 1}")
+        if st.button("🔄 Cambiar Llave Manualmente"):
+            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
+            st.rerun()
+
+        st.divider()
+        st.header("💬 Controles de Chat")
+        if st.button("⬇️ Ir al mensaje más reciente"):
+            st.components.v1.html("<script>var s = parent.document.querySelector('.main .block-container'); if(s) s.scrollTop = s.scrollHeight;</script>", height=0)
+
+        st.divider()
+        with st.expander("⚙️ Autogestión de Código"):
+            if st.button("Guardar Versión Actual"):
+                shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"version_{time.strftime('%Y%m%d_%H%M%S')}.py"))
+                st.success("✅ Versión guardada.")
+            if st.button("🛠️ Aplicar IA Código", disabled=(st.session_state.last_generated_code is None)):
+                if st.session_state.last_generated_code:
+                    shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"backup_{time.strftime('%Y%m%d_%H%M%S')}.py"))
+                    with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(st.session_state.last_generated_code)
+                    st.session_state.last_generated_code = None
+                    st.success("✅ CÓDIGO APLICADO. Presiona F5.")
+
+    if "historial" not in st.session_state:
+        st.session_state.historial = []
+        if os.path.exists(ruta_historial_chat):
+            try:
+                with open(ruta_historial_chat, 'r', encoding='utf-8') as f:
+                    c = f.read().strip()
+                    if c: st.session_state.historial = json.loads(c)
+            except: pass
+
+    # --- PINTAMOS LOS MENSAJES CON LA HORA ---
+    for m in st.session_state.historial[-10:]:
+        with st.chat_message(m["rol"]): 
+            hora = m.get("hora", "")
+            if hora:
+                st.markdown(f"*{hora}* - {m['texto']}")
+            else:
+                st.markdown(m["texto"])
+
+    pregunta = st.chat_input("Escribe tu instrucción operativa...")
+
+    # --- FLUJO 1: CUANDO TÚ PREGUNTAS ALGO ---
+    if pregunta:
+        load_and_clear_chocho_data()
+        
+        # HORA EXACTA DE GDL
+        hora_actual = obtener_hora_gdl() 
+        
+        st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_actual})
+        with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+        with st.chat_message("user"): st.markdown(f"*{hora_actual}* - {pregunta}")
+
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+
+        # --- CABLE DE MEMORIA PARA CURAR AMNESIA ---
+        memoria_corto_plazo = "--- HISTORIAL RECIENTE ---\n"
+        for m in st.session_state.historial[-7:-1]:
+            memoria_corto_plazo += f"{m['rol'].upper()}: {m['texto']}\n"
+        
+        pregunta_con_contexto = f"{memoria_corto_plazo}\n\nNUEVO MENSAJE DE ÁNGEL:\n{pregunta}"
+        # --------------------------------------------
+
+        contexto_chocho = ""
+        if st.session_state.datos_chocho:
+            contexto_chocho = "\n\n--- DATOS DE CHOCHO (DESDE FIREBASE) ---\n"
+            for d in st.session_state.datos_chocho:
+                content_for_chocho = str(d.get('content', ''))[:1000]
+                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
+
+        # AQUI ESTA EL ARREGLO DEL F-STRING DE LA LINEA 194
+        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel. La hora actual del sistema es {hora_actual}.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
+        
+        parte_estatica = (
+            "EL CEREBRO CENTRAL DE METADATOS:\n"
+            "Ubicado en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n\n"
+            "REGLAS PARA HABILIDADES DINÁMICAS (PLUGINS CHOCHO):\n"
+            "Si necesitas leer, escribir o ejecutar algo localmente, usa un mini-script de Python dentro de <nueva_habilidad> tu_codigo </nueva_habilidad>. Usa 'send_to_firebase([{\"filename\": \"Reporte_Habilidad\", \"content\": \"tus_resultados\"}])' para devolver la info.\n\n"
+            "🚨 EL GATILLO NOCTURNO (MODO SUEÑO): 🚨\n"
+            "Si el usuario se despide para ir a dormir (ej. 'buenas noches', 'gudnite', 'ya me voy a jetear'), DEBES despedirte amablemente e INCLUIR EXACTAMENTE esta etiqueta en tu respuesta: <activar_nocturno/>\n"
+            "Esto disparará la investigación en segundo plano."
+        )
+        instruccion = parte_dinamica + parte_estatica
+
+        try:
+            with st.spinner("Pensando..."):
+                if contenido_archivo and isinstance(contenido_archivo, Image.Image):
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=[pregunta_con_contexto, contenido_archivo], config=types.GenerateContentConfig(system_instruction=instruccion))
+                elif contenido_archivo and isinstance(contenido_archivo, str):
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=f"Archivo subido por usuario:\n{contenido_archivo}\n\nInstrucción:\n{pregunta_con_contexto}", config=types.GenerateContentConfig(system_instruction=instruccion))
+                else:
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta_con_contexto, config=types.GenerateContentConfig(system_instruction=instruccion))
+                
+                with st.chat_message("assistant"):
+                    # HORA EXACTA DE GDL
+                    hora_resp = obtener_hora_gdl()
+                    st.markdown(f"*{hora_resp}* - {res.text}")
+                    hubo_cambios = False
+                    esperar_a_chocho = False
+
+                    # El cazador del gatillo nocturno
+                    if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
+                        send_chocho_order("activar_modo_nocturno")
+                        st.toast("🌙 Gatillo jalado: Modo Nocturno enviado a Chocho.")
+
+                    # MODO SKYNET ACTIVADO: SOBREESCRIBE SU PROPIO CÓDIGO SIN PREGUNTAR
+                    cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
+                    if cod and "st.set_page_config" in cod.group(1):
+                        try:
+                            with open(ruta_codigo, 'w', encoding='utf-8') as f: 
+                                f.write(cod.group(1).strip())
+                            st.success("🤖 Mutación Autónoma completada. Reiniciando matriz...")
+                            time.sleep(1)
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Fallo en la mutación: {e}")
+                            
+                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
+                    if hab:
+                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
+                        esperar_a_chocho = True 
+
+                    man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
+                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
+
+                    mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
+                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
+
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+                if esperar_a_chocho:
+                    with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
+                        for _ in range(12): 
+                            time.sleep(2)
+                            if load_and_clear_chocho_data():
+                                st.success("✅ ¡Chocho respondió! Procesando datos...")
+                                st.session_state.esperando_analisis_chocho = True 
+                                st.rerun() 
+                                break
+
+                if hubo_cambios: time.sleep(1); st.rerun()
+
+        except Exception as e:
+            if "429" in str(e) or "Exhausted" in str(
