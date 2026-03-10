@@ -2,4 +2,6 @@ streamlit
 google-genai
 pandas
 openpyxl
+
 pdfplumber
+requests
