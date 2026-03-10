@@ -8,8 +8,7 @@ import json
 import requests
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN DE IDENTIDAD ---
-# Versión de Alta Disponibilidad v2.3 - Blindada
+# --- IDENTIDAD DE ALTA DISPONIBILIDAD v2.4 ---
 APP_ID = "omnisciencia-goob"
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_codigo = os.path.abspath(__file__)
@@ -17,7 +16,7 @@ ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
 ruta_manual = os.path.join(ruta_raiz, "manual_guba.txt")
 ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
 
-# Firebase bridge
+# URL DIRECTA DE FIREBASE
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -25,22 +24,25 @@ def obtener_hora_gdl():
     tz_gdl = timezone(timedelta(hours=-6))
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
-def enviar_latido():
-    """Protocolo Lázaro: Pulso vital para el Guardián local."""
+def enviar_latido_atomico():
+    """Envía el pulso vital con máxima prioridad."""
     try:
         url = f"{FIREBASE_URL}/status/skynet.json"
+        ts = time.time()
         data = {
-            "last_heartbeat": time.time(), 
+            "last_heartbeat": ts, 
             "hora": obtener_hora_gdl(), 
             "status": "ALIVE",
-            "version": "2.3-Master"
+            "msg": "Skynet v2.4 Reportando"
         }
-        requests.put(url, json=data, timeout=5)
+        # Timeout corto para no trabar la UI, pero envío forzado
+        requests.put(url, json=data, timeout=2)
+        return True
     except:
-        pass
+        return False
 
 def enviar_orden_chocho(comando, payload=None):
-    """Envía comandos al Agente Chocho en el disco G:."""
+    """Protocolo de comunicación con el Agente Chocho local."""
     try:
         url = f"{FIREBASE_URL}/ordenes.json"
         data = {"command": comando, "timestamp": time.time()}
@@ -50,33 +52,22 @@ def enviar_orden_chocho(comando, payload=None):
     except:
         return False
 
-def check_chocho_responses():
-    """Verifica si Chocho dejó algún reporte en Firebase."""
-    try:
-        url = f"{FIREBASE_URL}/respuestas.json"
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200 and res.json():
-            respuestas = list(res.json().values())
-            requests.delete(url) # Limpieza inmediata
-            return respuestas
-    except:
-        pass
-    return None
-
 try:
-    # --- UI CONFIG ---
+    # --- CONFIGURACIÓN UI ---
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
-    enviar_latido()
+    
+    # Latido atómico inmediato al entrar
+    enviar_latido_atomico()
 
-    st.title("🧠 Omniscienc_IA (Matriz Maestra)")
-    st.caption("Protocolo Lázaro v2.3 Activo | Resurrección Manual Exitosa")
+    st.title("🧠 Omniscienc_IA (Matriz Atómica)")
+    st.caption("Protocolo Lázaro v2.4 | Protección G: Activa")
     st.divider()
 
     # --- SEGURIDAD ---
     try:
         MIS_LLAVES = [st.secrets["api_keys"][f"llave_{i+1}"] for i in range(3)]
     except:
-        st.error("🚨 Error Crítico: No se detectaron las llaves en st.secrets.")
+        st.error("🚨 Error: Configura las api_keys en los Secrets de Streamlit.")
         st.stop()
 
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
@@ -88,7 +79,7 @@ try:
                     st.session_state.historial = json.load(f)
             except: pass
 
-    # --- CARGA DE ARCHIVOS ---
+    # --- LECTURA DE CONTEXTO ---
     def leer_safe(ruta):
         if os.path.exists(ruta):
             try:
@@ -99,7 +90,7 @@ try:
 
     manual_txt = leer_safe(ruta_manual)
     memoria_txt = leer_safe(ruta_memoria)
-    with open(ruta_codigo, 'r', encoding='utf-8') as f: codigo_full = f.read()
+    with open(ruta_codigo, 'r', encoding='utf-8') as f: codigo_actual = f.read()
 
     # --- SIDEBAR ---
     with st.sidebar:
@@ -108,30 +99,30 @@ try:
         if st.button("📍 Mapear Drive"): enviar_orden_chocho("list_drive_structure")
         
         st.divider()
-        st.info(f"⚡ Llave activa: #{st.session_state.indice_llave + 1}")
+        st.info(f"⚡ Llave: #{st.session_state.indice_llave + 1}")
         if st.button("🔄 Rotar Llave"):
             st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
             st.rerun()
 
     # --- CHAT ---
-    for m in st.session_state.historial[-12:]:
+    for m in st.session_state.historial[-10:]:
         with st.chat_message(m["rol"]):
             st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
     pregunta = st.chat_input("Instrucción para la Matriz...")
 
     if pregunta:
-        enviar_latido()
-        hora_user = obtener_hora_gdl()
-        st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_user})
-        with st.chat_message("user"): st.markdown(f"*{hora_user}* - {pregunta}")
+        enviar_latido_atomico() # Latido al interactuar
+        hora_now = obtener_hora_gdl()
+        st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_now})
+        with st.chat_message("user"): st.markdown(f"*{hora_now}* - {pregunta}")
 
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
         
         sys_inst = (
-            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora GDL: {hora_user}.\n"
+            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora GDL: {hora_now}.\n"
             f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n"
-            f"Código fuente:\n{codigo_full}\n"
+            f"Código fuente:\n{codigo_actual}\n"
             "REGLAS: <nueva_habilidad> (Chocho), <mutacion_skynet> (ADN), <activar_nocturno/> (Sueño)."
         )
 
@@ -144,8 +135,8 @@ try:
                 )
                 
                 with st.chat_message("assistant"):
-                    hora_ai = obtener_hora_gdl()
-                    st.markdown(f"*{hora_ai}* - {res.text}")
+                    hora_resp = obtener_hora_gdl()
+                    st.markdown(f"*{hora_resp}* - {res.text}")
                     
                     # Mutación
                     sky = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
@@ -158,7 +149,7 @@ try:
                                 "codigo": adn, 
                                 "filename": f"auto_{time.strftime('%Y%m%d_%H%M%S')}.py"
                             })
-                            st.success("🤖 Mutación Exitosa.")
+                            st.success("🤖 ADN Mutado.")
                             time.sleep(1)
                             st.rerun()
 
@@ -168,17 +159,16 @@ try:
                         code = hab.group(1).strip()
                         code = re.sub(r'^```python\n?|```$', '', code, flags=re.MULTILINE).strip()
                         enviar_orden_chocho("ejecutar_habilidad", {"codigo": code})
-                        st.toast("🚀 Habilidad enviada.")
 
                     if "<activar_nocturno/>" in res.text:
                         enviar_orden_chocho("activar_modo_nocturno")
 
-                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_ai})
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: 
                     json.dump(st.session_state.historial, f, ensure_ascii=False)
 
         except Exception as e:
-            st.error(f"Error de procesamiento: {e}")
+            st.error(f"Error: {e}")
 
 except Exception as fatal:
     st.error(f"🚨 CRASH: {fatal}")
