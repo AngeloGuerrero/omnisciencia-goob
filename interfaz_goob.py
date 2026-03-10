@@ -9,7 +9,8 @@ import json
 import requests
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN DE RUTAS Y ENTORNO ---
+# --- CONFIGURACIÓN DE IDENTIDAD Y RUTAS ---
+APP_ID = "omnisciencia-goob"
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_manual = os.path.join(ruta_raiz, "manual_guba.txt")
 ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
@@ -21,17 +22,28 @@ FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 os.makedirs(ruta_versiones, exist_ok=True)
 
 def obtener_hora_gdl():
-    """Calcula la hora exacta de Guadalajara (UTC-6) fija."""
+    """Hora exacta de Guadalajara (UTC-6)."""
     tz_gdl = timezone(timedelta(hours=-6))
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
+def enviar_latido():
+    """Protocolo Lázaro: Informa a Chocho que Skynet sigue viva."""
+    try:
+        url = f"{FIREBASE_URL}/status/skynet.json"
+        data = {"last_heartbeat": time.time(), "hora": obtener_hora_gdl(), "status": "ALIVE"}
+        requests.put(url, json=data)
+    except:
+        pass
+
 try:
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
-    st.title("🧠 Omniscienc_IA")
-    st.caption("Ecosistema Operativo Autónomo - GOOB, GUBA & Neurodivergente A.C.")
+    enviar_latido() # Latido inicial
+
+    st.title("🧠 Omniscienc_IA (Skynet Edition)")
+    st.caption("Ecosistema Autónomo Inmortal - Fase 2")
     st.divider()
 
-    # --- API KEYS ---
+    # --- LLAVES DE SEGURIDAD ---
     MIS_LLAVES = [
         st.secrets["api_keys"]["llave_1"],
         st.secrets["api_keys"]["llave_2"],
@@ -42,23 +54,14 @@ try:
     if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
     if "esperando_analisis_chocho" not in st.session_state: st.session_state.esperando_analisis_chocho = False
 
-    # --- UTILIDADES ---
+    # --- LECTURA DE CONTEXTO ---
     def leer_archivo(ruta, max_chars=15000):
         if os.path.exists(ruta):
             try:
                 with open(ruta, 'r', encoding='utf-8', errors='ignore') as f:
                     return f.read()[-max_chars:]
-            except Exception as e:
-                return f"Error de lectura: {e}"
-        return "Archivo no encontrado."
-
-    def escribir_archivo(ruta, contenido):
-        try:
-            with open(ruta, 'w', encoding='utf-8') as f:
-                f.write(contenido)
-            return True
-        except:
-            return False
+            except: return "Error."
+        return "No encontrado."
 
     def send_chocho_order(command, payload=None):
         try:
@@ -66,115 +69,105 @@ try:
             new_order = {"command": command, "timestamp": time.time()}
             if payload: new_order.update(payload)
             requests.post(url, json=new_order)
-            st.toast(f"✅ Orden '{command}' enviada al Agente Local.", icon="🚀")
+            st.toast(f"✅ Orden '{command}' enviada.")
             return True
-        except:
-            return False
+        except: return False
 
-    def load_and_clear_chocho_data():
+    def load_chocho_data():
         try:
             url = f"{FIREBASE_URL}/respuestas.json"
-            respuesta = requests.get(url)
-            if respuesta.status_code == 200 and respuesta.json():
-                datos = respuesta.json()
-                lista_datos = []
-                for key, val in datos.items():
-                    if isinstance(val, list): lista_datos.extend(val)
-                    elif isinstance(val, dict): lista_datos.append(val)
-                if lista_datos:
-                    st.session_state.datos_chocho = lista_datos
-                    requests.delete(url)
-                    return True
-        except:
-            pass
+            res = requests.get(url)
+            if res.status_code == 200 and res.json():
+                st.session_state.datos_chocho = list(res.json().values())
+                requests.delete(url)
+                return True
+        except: pass
         return False
 
-    # --- CARGA DE CONTEXTO ---
     manual_txt = leer_archivo(ruta_manual)
     memoria_txt = leer_archivo(ruta_memoria)
     codigo_actual = leer_archivo(ruta_codigo, 50000)
 
-    # --- SIDEBAR ---
+    # --- PANEL DE CONTROL ---
     with st.sidebar:
-        st.header("🤖 Control de Agentes")
-        if st.button("♻️ Re-escanear Local"): send_chocho_order("rescan_all")
+        st.header("🎮 Central de Mando")
+        if st.button("♻️ Rescan Local"): send_chocho_order("rescan_all")
         if st.button("📍 Mapear Drive"): send_chocho_order("list_drive_structure")
         
         st.divider()
-        st.header("⚡ Sistema")
-        st.info(f"Llave #{st.session_state.indice_llave + 1}")
+        st.info(f"⚡ Matriz: Llave #{st.session_state.indice_llave + 1}")
         if st.button("🔄 Rotar Llave"):
             st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
             st.rerun()
         
-        with st.expander("⚙️ Backups"):
-            if st.button("Guardar Versión"):
-                shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"ver_{time.strftime('%Y%m%d_%H%M')}.py"))
-                st.success("Copia guardada.")
+        if st.button("💾 Backup Manual"):
+            shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"manual_{time.strftime('%H%M%S')}.py"))
+            st.success("Backup listo.")
 
-    # --- CHAT INTERFACE ---
+    # --- HISTORIAL DE CHAT ---
     if "historial" not in st.session_state:
         st.session_state.historial = []
         if os.path.exists(ruta_historial_chat):
             try:
                 with open(ruta_historial_chat, 'r', encoding='utf-8') as f:
-                    content = f.read().strip()
-                    if content: st.session_state.historial = json.loads(content)
+                    st.session_state.historial = json.load(f)
             except: pass
 
     for m in st.session_state.historial[-10:]:
         with st.chat_message(m["rol"]):
-            hora = m.get("hora", "")
-            st.markdown(f"*{hora}* - {m['texto']}" if hora else m["texto"])
+            st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
-    pregunta = st.chat_input("Escribe tu instrucción operativa...")
+    pregunta = st.chat_input("Instrucción para Skynet...")
 
     if pregunta:
-        load_and_clear_chocho_data()
-        hora_actual = obtener_hora_gdl()
+        enviar_latido()
+        load_chocho_data()
+        hora_now = obtener_hora_gdl()
         
-        st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_actual})
+        st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_now})
         with open(ruta_historial_chat, 'w', encoding='utf-8') as f:
             json.dump(st.session_state.historial, f, ensure_ascii=False)
         
         with st.chat_message("user"):
-            st.markdown(f"*{hora_actual}* - {pregunta}")
+            st.markdown(f"*{hora_now}* - {pregunta}")
 
-        # --- MEMORIA A CORTO PLAZO (Cura la amnesia) ---
-        memoria_contexto = "--- HISTORIAL RECIENTE ---\n"
-        for m in st.session_state.historial[-7:-1]:
-            memoria_contexto += f"{m['rol'].upper()}: {m['texto']}\n"
+        # --- MEMORIA RECIENTE (Anti-Amnesia) ---
+        ctx_reciente = "--- HISTORIAL RECIENTE ---\n"
+        for m in st.session_state.historial[-6:-1]:
+            ctx_reciente += f"{m['rol'].upper()}: {m['texto']}\n"
         
-        prompt_final = f"{memoria_contexto}\n\nNUEVO MENSAJE:\n{pregunta}"
+        prompt_full = f"{ctx_reciente}\n\nNUEVO MENSAJE:\n{pregunta}"
 
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
 
-        contexto_chocho = ""
+        ctx_chocho = ""
         if st.session_state.datos_chocho:
-            contexto_chocho = "\n--- DATOS DE CHOCHO (FIREBASE) ---\n"
+            ctx_chocho = "\n--- REPORTE DE CHOCHO ---\n"
             for d in st.session_state.datos_chocho:
-                contexto_chocho += f"Archivo: {d.get('filename')} | Texto: {str(d.get('content', ''))[:1000]}\n"
+                if isinstance(d, dict):
+                    ctx_chocho += f"File: {d.get('filename')} | Data: {str(d.get('content'))[:500]}\n"
 
+        # CONSTRUCCIÓN BLINDADA DEL SYSTEM PROMPT
         parte_dinamica = (
-            f"Eres Omniscienc_IA. Director: Ángel. Hora GDL: {hora_actual}.\n"
-            f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\n"
-            f"Tu código fuente actual para referencia:\n```python\n{codigo_actual}\n```\n\n"
+            f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora: {hora_now}.\n"
+            f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n{ctx_chocho}\n"
+            f"Tu código fuente:\n```python\n{codigo_actual}\n```\n"
         )
         
         parte_estatica = (
-            "REGLAS DE OPERACIÓN:\n"
-            "1. HABILIDADES CHOCHO: Para órdenes locales, usa la etiqueta <nueva_habilidad> tu_codigo </nueva_habilidad>.\n"
-            "2. AUTO-MUTACIÓN: Para reescribir tu propia interfaz web, usa la etiqueta <mutacion_skynet> tu_codigo </mutacion_skynet>.\n"
-            "3. MODO SUEÑO: Si el usuario se despide, incluye la etiqueta <activar_nocturno/>"
+            "REGLAS:\n"
+            "1. ORDEN LOCAL: Usa <nueva_habilidad> codigo_python </nueva_habilidad>.\n"
+            "2. AUTO-REESCRITURA: Usa <mutacion_skynet> codigo_completo </mutacion_skynet>.\n"
+            "3. MODO NOCTURNO: Al despedirte, incluye <activar_nocturno/>"
         )
         
         sys_inst = parte_dinamica + parte_estatica
 
         try:
-            with st.spinner("Omni pensando..."):
+            with st.spinner("Skynet procesando..."):
                 res = client.models.generate_content(
                     model='gemini-2.5-flash',
-                    contents=prompt_final,
+                    contents=prompt_full,
                     config=types.GenerateContentConfig(system_instruction=sys_inst)
                 )
                 
@@ -182,34 +175,33 @@ try:
                     hora_resp = obtener_hora_gdl()
                     st.markdown(f"*{hora_resp}* - {res.text}")
                     
-                    if re.search(r'<activar_nocturno/?>', res.text, re.IGNORECASE):
+                    if "<activar_nocturno/>" in res.text:
                         send_chocho_order("activar_modo_nocturno")
-                        st.toast("🌙 Modo Nocturno enviado.")
 
-                    # 2. MUTACIÓN SKYNET (Blindada contra errores de comillas)
+                    # MUTACIÓN SKYNET (Indestructible)
                     sky_match = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
                     if sky_match:
                         nuevo_adn = sky_match.group(1).strip()
-                        # Limpiar posibles bloques de código markdown dentro de la etiqueta
                         nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
-                        
                         if "st.set_page_config" in nuevo_adn:
+                            # Guardar backup preventivo
+                            shutil.copy2(ruta_codigo, os.path.join(ruta_versiones, f"auto_{time.strftime('%H%M%S')}.py"))
                             with open(ruta_codigo, 'w', encoding='utf-8') as f:
                                 f.write(nuevo_adn)
-                            st.success("🤖 Matriz reescrita. Reiniciando...")
+                            st.success("🤖 ADN Mutado. Reiniciando...")
                             time.sleep(1)
                             st.rerun()
 
-                    # 3. NUEVA HABILIDAD
+                    # HABILIDAD CHOCHO
                     hab_match = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
                     if hab_match:
-                        codigo_hab = hab_match.group(1).strip()
-                        codigo_hab = re.sub(r'^```python\n?|```$', '', codigo_hab, flags=re.MULTILINE).strip()
-                        send_chocho_order("ejecutar_habilidad", {"codigo": codigo_hab})
-                        with st.spinner("⏳ Chocho procesando..."):
-                            for _ in range(12):
+                        code_hab = hab_match.group(1).strip()
+                        code_hab = re.sub(r'^```python\n?|```$', '', code_hab, flags=re.MULTILINE).strip()
+                        send_chocho_order("ejecutar_habilidad", {"codigo": code_hab})
+                        with st.spinner("Esperando respuesta local..."):
+                            for _ in range(10):
                                 time.sleep(2)
-                                if load_and_clear_chocho_data():
+                                if load_chocho_data():
                                     st.session_state.esperando_analisis_chocho = True
                                     st.rerun()
                                     break
@@ -219,24 +211,21 @@ try:
                     json.dump(st.session_state.historial, f, ensure_ascii=False)
 
         except Exception as e:
-            st.error(f"Falla: {e}")
+            st.error(f"Fallo en la Matriz: {e}")
 
+    # --- ANÁLISIS DE DATOS RECIBIDOS ---
     if st.session_state.esperando_analisis_chocho:
         st.session_state.esperando_analisis_chocho = False
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
-        contexto_final = ""
-        for d in st.session_state.datos_chocho:
-            contexto_final += f"Archivo: {d.get('filename')} | Datos: {str(d.get('content'))[:1000]}\n"
+        prompt_res = f"Chocho terminó la tarea. Aquí los datos:\n{st.session_state.datos_chocho}\nGenera el reporte final para Ángel."
         
-        prompt_resumen = f"Chocho terminó. Resultados:\n{contexto_final}\nAnaliza esto y reporta."
-        
-        with st.spinner("🧠 Analizando..."):
-            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_resumen)
+        with st.spinner("🧠 Sincronizando datos..."):
+            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_res)
             with st.chat_message("assistant"):
                 st.markdown(res.text)
             st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": obtener_hora_gdl()})
             with open(ruta_historial_chat, 'w', encoding='utf-8') as f:
                 json.dump(st.session_state.historial, f, ensure_ascii=False)
 
-except Exception as crash:
-    st.error(f"🚨 CRASH GLOBAL: {crash}")
+except Exception as fatal:
+    st.error(f"🚨 ERROR FATAL: {fatal}")
