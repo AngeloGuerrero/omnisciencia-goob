@@ -205,4 +205,107 @@ try:
         try:
             with st.spinner("Pensando..."):
                 if contenido_archivo and isinstance(contenido_archivo, Image.Image):
-                    res = client.models.generate_content(model='gemini-2.5-flash', contents=[pre
+                    res = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=[pregunta, contenido_archivo],
+                        config=types.GenerateContentConfig(system_instruction=instruccion)
+                    )
+                elif contenido_archivo and isinstance(contenido_archivo, str):
+                    res = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=f"Archivo subido por usuario:\n{contenido_archivo}\n\nInstrucción: {pregunta}",
+                        config=types.GenerateContentConfig(system_instruction=instruccion)
+                    )
+                else:
+                    res = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=pregunta,
+                        config=types.GenerateContentConfig(system_instruction=instruccion)
+                    )
+                
+                with st.chat_message("assistant"):
+                    st.markdown(res.text)
+                    hubo_cambios = False
+                    esperar_a_chocho = False
+
+                    cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
+                    if cod and "st.set_page_config" in cod.group(1):
+                        st.session_state.last_generated_code = cod.group(1).strip()
+                        st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
+                        hubo_cambios = True
+
+                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
+                    if hab:
+                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
+                        esperar_a_chocho = True 
+
+                    man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
+                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
+
+                    mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
+                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
+
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+                if esperar_a_chocho:
+                    with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
+                        for _ in range(12): # Espera hasta 24 segundos
+                            time.sleep(2)
+                            if load_and_clear_chocho_data():
+                                st.success("✅ ¡Chocho respondió! Procesando datos...")
+                                st.session_state.esperando_analisis_chocho = True # DISPARA EL BUCLE AUTÓNOMO
+                                st.rerun() 
+                                break
+
+                if hubo_cambios: time.sleep(1); st.rerun()
+
+        except Exception as e:
+            if "429" in str(e) or "Exhausted" in str(e):
+                st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
+                st.rerun()
+            else: st.error(f"Error técnico: {e}")
+
+    # --- FLUJO 2: EL AUTO-DISPARADOR CUANDO CHOCHO TERMINA ---
+    if st.session_state.esperando_analisis_chocho:
+        st.session_state.esperando_analisis_chocho = False # Lo apagamos para no hacer un bucle infinito
+        
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+        
+        contexto_chocho = ""
+        if st.session_state.datos_chocho:
+            contexto_chocho = "\n\n--- DATOS DE CHOCHO (DESDE FIREBASE) ---\n"
+            for d in st.session_state.datos_chocho:
+                content_for_chocho = str(d.get('content', ''))[:1000]
+                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
+        
+        parte_dinamica = f"Eres Omniscienc_IA. Director: Ángel.\nManual: {manual_txt}\nMemoria: {memoria_txt}\n{contexto_chocho}\nCódigo actual: ```python\n{codigo_actual}\n```\n\n"
+        parte_estatica = (
+            "EL CEREBRO CENTRAL DE METADATOS (REGISTRO AKÁSHICO):\n"
+            "El sistema tiene una base de datos maestra en la computadora local de Ángel ubicada estrictamente en: J:\\Mi unidad\\OmnisciencIA_Chocho_Data\\Cerebro_Metadatos.json\n"
+        )
+        instruccion = parte_dinamica + parte_estatica
+
+        # El mensaje que le inyectamos automáticamente a la IA
+        prompt_invisible = "Chocho acaba de ejecutar la habilidad exitosamente y devolvió los resultados que pediste (están en DATOS DE CHOCHO). Por favor, lee esos datos y entrégale el reporte final a Ángel de forma natural, directa y sin pedirle que te vuelva a preguntar."
+
+        try:
+            with st.spinner("🧠 Leyendo la mente de Chocho..."):
+                res = client.models.generate_content(
+                    model='gemini-2.5-flash',
+                    contents=prompt_invisible,
+                    config=types.GenerateContentConfig(system_instruction=instruccion)
+                )
+                
+                with st.chat_message("assistant"):
+                    st.markdown(res.text)
+                
+                st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+                with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+                
+        except Exception as e:
+            st.error(f"Error técnico en el cierre autónomo: {e}")
+
+except Exception as global_crash:
+    st.error("🚨 ¡CRASH DEL SISTEMA!")
+    st.warning(f"Error detectado: {global_crash}")
