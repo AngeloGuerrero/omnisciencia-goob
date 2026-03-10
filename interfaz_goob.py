@@ -135,3 +135,4 @@ if st.session_state.esperando:
             status.update(label="❌ Chocho no respondió a tiempo", state="error")
             st.session_state.esperando = False
 
+
