@@ -8,15 +8,16 @@ import json
 import requests
 from datetime import datetime, timedelta, timezone
 
-# --- IDENTIDAD DE ALTA DISPONIBILIDAD v2.4 ---
+# --- IDENTIDAD DE ALTA DISPONIBILIDAD v2.5 ---
 APP_ID = "omnisciencia-goob"
+# Rutas dinámicas
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_codigo = os.path.abspath(__file__)
 ruta_historial_chat = os.path.join(ruta_raiz, "historial_chat.json")
 ruta_manual = os.path.join(ruta_raiz, "manual_guba.txt")
 ruta_memoria = os.path.join(ruta_raiz, "memoria_historica_goob.txt")
 
-# URL DIRECTA DE FIREBASE
+# Firebase Config (URL DIRECTA)
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -24,20 +25,18 @@ def obtener_hora_gdl():
     tz_gdl = timezone(timedelta(hours=-6))
     return datetime.now(tz_gdl).strftime("%Y-%m-%d %I:%M %p")
 
-def enviar_latido_atomico():
-    """Envía el pulso vital con máxima prioridad."""
+def enviar_latido_v25():
+    """Envía el latido y devuelve True si tuvo éxito."""
     try:
         url = f"{FIREBASE_URL}/status/skynet.json"
-        ts = time.time()
         data = {
-            "last_heartbeat": ts, 
+            "last_heartbeat": time.time(), 
             "hora": obtener_hora_gdl(), 
             "status": "ALIVE",
-            "msg": "Skynet v2.4 Reportando"
+            "version": "2.5-Adamantium"
         }
-        # Timeout corto para no trabar la UI, pero envío forzado
-        requests.put(url, json=data, timeout=2)
-        return True
+        r = requests.put(url, json=data, timeout=5)
+        return r.status_code == 200
     except:
         return False
 
@@ -52,23 +51,23 @@ def enviar_orden_chocho(comando, payload=None):
     except:
         return False
 
+# --- INICIO DE APLICACIÓN ---
 try:
-    # --- CONFIGURACIÓN UI ---
-    st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
+    st.set_page_config(page_title="Omniscienc_IA v2.5", page_icon="🦾", layout="wide")
     
-    # Latido atómico inmediato al entrar
-    enviar_latido_atomico()
+    # Latido crítico al inicio
+    latido_ok = enviar_latido_v25()
 
-    st.title("🧠 Omniscienc_IA (Matriz Atómica)")
-    st.caption("Protocolo Lázaro v2.4 | Protección G: Activa")
+    st.title("🦾 Omniscienc_IA (Escudo Adamantium)")
+    st.caption("Protocolo Lázaro v2.5 | Estado: Alta Disponibilidad")
     st.divider()
 
     # --- SEGURIDAD ---
-    try:
-        MIS_LLAVES = [st.secrets["api_keys"][f"llave_{i+1}"] for i in range(3)]
-    except:
-        st.error("🚨 Error: Configura las api_keys en los Secrets de Streamlit.")
+    if "api_keys" not in st.secrets:
+        st.error("🚨 Error: No se encontraron los Secrets 'api_keys'.")
         st.stop()
+    
+    MIS_LLAVES = [st.secrets["api_keys"][f"llave_{i+1}"] for i in range(3)]
 
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
     if "historial" not in st.session_state:
@@ -79,7 +78,25 @@ try:
                     st.session_state.historial = json.load(f)
             except: pass
 
-    # --- LECTURA DE CONTEXTO ---
+    # --- SIDEBAR ---
+    with st.sidebar:
+        st.header("🎮 Centro de Mando")
+        if latido_ok:
+            st.success("📡 Latido: SINCRONIZADO")
+        else:
+            st.error("📡 Latido: FALLIDO (Guardian Alerta)")
+        
+        st.divider()
+        if st.button("♻️ Rescan Local"): enviar_orden_chocho("rescan_all")
+        if st.button("📍 Mapear Drive"): enviar_orden_chocho("list_drive_structure")
+        
+        st.divider()
+        st.info(f"⚡ Llave: #{st.session_state.indice_llave + 1}")
+        if st.button("🔄 Rotar Llave"):
+            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
+            st.rerun()
+
+    # --- CARGA DE DATOS ---
     def leer_safe(ruta):
         if os.path.exists(ruta):
             try:
@@ -92,27 +109,15 @@ try:
     memoria_txt = leer_safe(ruta_memoria)
     with open(ruta_codigo, 'r', encoding='utf-8') as f: codigo_actual = f.read()
 
-    # --- SIDEBAR ---
-    with st.sidebar:
-        st.header("🎮 Centro de Mando")
-        if st.button("♻️ Rescan Local"): enviar_orden_chocho("rescan_all")
-        if st.button("📍 Mapear Drive"): enviar_orden_chocho("list_drive_structure")
-        
-        st.divider()
-        st.info(f"⚡ Llave: #{st.session_state.indice_llave + 1}")
-        if st.button("🔄 Rotar Llave"):
-            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
-            st.rerun()
-
     # --- CHAT ---
     for m in st.session_state.historial[-10:]:
         with st.chat_message(m["rol"]):
             st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
-    pregunta = st.chat_input("Instrucción para la Matriz...")
+    pregunta = st.chat_input("Escribe tu instrucción operativa...")
 
     if pregunta:
-        enviar_latido_atomico() # Latido al interactuar
+        enviar_latido_v25() # Pulso al interactuar
         hora_now = obtener_hora_gdl()
         st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_now})
         with st.chat_message("user"): st.markdown(f"*{hora_now}* - {pregunta}")
@@ -138,7 +143,7 @@ try:
                     hora_resp = obtener_hora_gdl()
                     st.markdown(f"*{hora_resp}* - {res.text}")
                     
-                    # Mutación
+                    # Lógica de Mutación
                     sky = re.search(r'<mutacion_skynet>(.*?)</mutacion_skynet>', res.text, re.DOTALL)
                     if sky:
                         adn = sky.group(1).strip()
@@ -149,11 +154,12 @@ try:
                                 "codigo": adn, 
                                 "filename": f"auto_{time.strftime('%Y%m%d_%H%M%S')}.py"
                             })
-                            st.success("🤖 ADN Mutado.")
+                            st.success("🤖 Mutación completada.")
+                            enviar_latido_v25() # Latido post-mutacion
                             time.sleep(1)
                             st.rerun()
 
-                    # Habilidad
+                    # Lógica de Habilidad
                     hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
                     if hab:
                         code = hab.group(1).strip()
@@ -168,7 +174,7 @@ try:
                     json.dump(st.session_state.historial, f, ensure_ascii=False)
 
         except Exception as e:
-            st.error(f"Error: {e}")
+            st.error(f"Falla de procesamiento: {e}")
 
 except Exception as fatal:
-    st.error(f"🚨 CRASH: {fatal}")
+    st.error(f"🚨 CRASH GLOBAL: {fatal}")
