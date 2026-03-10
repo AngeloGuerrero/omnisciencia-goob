@@ -29,6 +29,22 @@ os.makedirs(ruta_versiones, exist_ok=True)
 
 try:
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🚀", layout="wide")
+
+    # --- CSS MAGIA PARA ENCABEZADO FIJO ---
+    st.markdown("""
+        <style>
+            div[data-testid="stVerticalBlock"] > div:first-child {
+                position: sticky;
+                top: 0;
+                z-index: 999;
+                background-color: #0e1117;
+                padding-top: 1rem;
+                padding-bottom: 1rem;
+                border-bottom: 1px solid #333;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+
     st.title("🧠 Omniscienc_IA")
     st.caption("Gerente Operativo de GOOB, GUBA y Neurodivergente A.C.")
     st.divider()
@@ -107,8 +123,16 @@ try:
     memoria_txt = leer_archivo(ruta_memoria)
     codigo_actual = leer_archivo(ruta_codigo, 50000)
 
-    # --- BARRA LATERAL (CONTROLES) ---
+    # --- BARRA LATERAL (CONTROLES Y UPLOADER) ---
     with st.sidebar:
+        st.header("📎 Analizador Visual")
+        archivo_usuario = st.file_uploader("Sube una imagen o archivo para Omniscienc_IA", type=["png", "jpg", "jpeg", "pdf", "txt"])
+        contenido_archivo = None
+        if archivo_usuario:
+            contenido_archivo = procesar_archivo_subido(archivo_usuario)
+            st.success("✅ Archivo cargado. Haz tu pregunta en el chat.")
+
+        st.divider()
         st.header("🤖 Control de Agentes (Chocho)")
         if st.button("♻️ Re-escanear Archivos"):
             send_chocho_order("rescan_all")
@@ -122,6 +146,11 @@ try:
         if st.button("🔄 Cambiar Llave Manualmente"):
             st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
             st.rerun()
+
+        st.divider()
+        st.header("💬 Controles de Chat")
+        if st.button("⬇️ Ir al mensaje más reciente"):
+            st.components.v1.html("<script>var s = parent.document.querySelector('.main .block-container'); if(s) s.scrollTop = s.scrollHeight;</script>", height=0)
 
         st.divider()
         with st.expander("⚙️ Autogestión de Código"):
@@ -148,13 +177,6 @@ try:
     for m in st.session_state.historial[-10:]:
         with st.chat_message(m["rol"]): st.markdown(m["texto"])
 
-    # --- UPLOADER MANUAL DE ARCHIVOS (Los "Ojos") ---
-    archivo_usuario = st.file_uploader("📎 Subir archivo o imagen a Omniscienc_IA", type=["png", "jpg", "jpeg", "pdf", "txt"])
-    contenido_archivo = None
-    if archivo_usuario:
-        contenido_archivo = procesar_archivo_subido(archivo_usuario)
-        st.success(f"Archivo {archivo_usuario.name} listo para ser analizado.")
-
     pregunta = st.chat_input("Escribe tu instrucción operativa...")
 
     if pregunta:
@@ -172,6 +194,7 @@ try:
                 content_for_chocho = str(d.get('content'))[:1000]
                 contexto_chocho += f"Archivo: {d.get('filename')} | Estado: {d.get('status')}\nTexto: {content_for_chocho}\n\n"
 
+        # ¡AQUÍ ESTÁ EL FIX DE LAS LLAVES DOBLES {{ }} !
         instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
         Manual: {manual_txt}
         Memoria: {memoria_txt}
@@ -179,9 +202,9 @@ try:
         Código actual: ```python\n{codigo_actual}\n```
 
         REGLAS PARA CREAR HABILIDADES DINÁMICAS (PLUGINS PARA CHOCHO):
-        Si el usuario te pide a ti o a Chocho hacer algo en la computadora local que tú no puedes hacer desde la nube (como buscar texto en muchos archivos, filtrar un excel complejo, o crear un reporte local), DEBES redactar un mini-script de Python.
+        Si el usuario te pide a ti o a Chocho hacer algo en la computadora local que tú no puedes hacer desde la nube, DEBES redactar un mini-script de Python.
         Usa la etiqueta <nueva_habilidad> tu_codigo_python_aqui </nueva_habilidad>. 
-        El código debe ser auto-contenido, importar sus librerías, realizar la tarea en el disco local y usar la función 'send_to_firebase([{"filename": "Reporte_Habilidad", "content": "tus_resultados"}])' para devolverte los datos. Chocho lo ejecutará.
+        El código debe ser auto-contenido, importar sus librerías y usar la función 'send_to_firebase([{{ "filename": "Reporte_Habilidad", "content": "tus_resultados" }}])' para devolverte los datos. Chocho lo ejecutará.
 
         Si debes modificar tu propio código de Streamlit, usa un bloque ```python
         Para actualizar manual usa <nuevo_manual>...</nuevo_manual>
@@ -189,7 +212,6 @@ try:
 
         try:
             with st.spinner("Pensando..."):
-                # Si el usuario subió un archivo/imagen, se lo mandamos a la API
                 if contenido_archivo and isinstance(contenido_archivo, Image.Image):
                     res = client.models.generate_content(model='gemini-2.5-flash', contents=[pregunta, contenido_archivo], config=types.GenerateContentConfig(system_instruction=instruccion))
                 elif contenido_archivo and isinstance(contenido_archivo, str):
@@ -201,14 +223,12 @@ try:
                     st.markdown(res.text)
                     hubo_cambios = False
 
-                    # Detección de código para actualizarse a sí misma
                     cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
-                    if cod and "st.set_page_config" in cod.group(1): # Validamos que sea código de streamlit
+                    if cod and "st.set_page_config" in cod.group(1):
                         st.session_state.last_generated_code = cod.group(1).strip()
                         st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
                         hubo_cambios = True
 
-                    # Detección de Habilidades Dinámicas para Chocho
                     hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
                     if hab:
                         send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
