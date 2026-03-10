@@ -9,7 +9,8 @@ import json
 import requests
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN DE IDENTIDAD ---
+# --- CONFIGURACIÓN DE IDENTIDAD Y RUTAS ---
+APP_ID = "omnisciencia-goob"
 # Skynet en la nube. Chocho en local es el brazo ejecutor.
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
 ruta_codigo = os.path.abspath(__file__)
@@ -49,22 +50,44 @@ def enviar_orden_chocho(comando, payload=None):
     except:
         return False
 
+def load_and_clear_chocho_data():
+    """Carga respuestas de Chocho y limpia el nodo de respuestas."""
+    try:
+        url = f"{FIREBASE_URL}/respuestas.json"
+        res = requests.get(url, timeout=5)
+        if res.status_code == 200 and res.json():
+            st.session_state.datos_chocho = list(res.json().values())
+            requests.delete(url)
+            return True
+    except:
+        pass
+    return False
+
 try:
+    # --- INICIO DE SISTEMA ---
     st.set_page_config(page_title="Omniscienc_IA", page_icon="🧠", layout="wide")
-    enviar_latido() # Latido al cargar la página
+    
+    # Latido vital inicial
+    enviar_latido() 
 
     st.title("🧠 Omniscienc_IA (Skynet Inmortal)")
     st.caption("Ecosistema de Alta Disponibilidad - Sincronización G: Activa")
     st.divider()
 
-    # --- API KEYS ---
+    # --- LLAVES DE SEGURIDAD ---
     MIS_LLAVES = [st.secrets["api_keys"][f"llave_{i+1}"] for i in range(3)]
+
     if "indice_llave" not in st.session_state: st.session_state.indice_llave = 0
+    if "datos_chocho" not in st.session_state: st.session_state.datos_chocho = []
+    if "esperando_analisis_chocho" not in st.session_state: st.session_state.esperando_analisis_chocho = False
 
     # --- CARGA DE CONTEXTO ---
-    def leer_txt(ruta):
+    def leer_txt(ruta, max_chars=15000):
         if os.path.exists(ruta):
-            with open(ruta, 'r', encoding='utf-8', errors='ignore') as f: return f.read()[-15000:]
+            try:
+                with open(ruta, 'r', encoding='utf-8', errors='ignore') as f:
+                    return f.read()[-max_chars:]
+            except: return "Error."
         return "Vacío."
 
     manual_txt = leer_txt(ruta_manual)
@@ -79,11 +102,11 @@ try:
         
         st.divider()
         st.info(f"⚡ Matriz: Llave #{st.session_state.indice_llave + 1}")
-        if st.button("🔄 Rotar Llave"):
-            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % 3
+        if st.button("🔄 Rotar API Key"):
+            st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
             st.rerun()
 
-    # --- CHAT ---
+    # --- HISTORIAL ---
     if "historial" not in st.session_state:
         st.session_state.historial = []
         if os.path.exists(ruta_historial_chat):
@@ -92,11 +115,13 @@ try:
                     st.session_state.historial = json.load(f)
             except: pass
 
+    # Mostrar historial limitado
     for m in st.session_state.historial[-8:]:
         with st.chat_message(m["rol"]):
             st.markdown(f"*{m.get('hora', '')}* - {m['texto']}")
 
-    pregunta = st.chat_input("Escribe tu instrucción operativa...")
+    # --- INPUT ---
+    pregunta = st.chat_input("Instrucción para la Matriz...")
 
     if pregunta:
         enviar_latido() # Latido al interactuar
@@ -104,13 +129,15 @@ try:
         st.session_state.historial.append({"rol": "user", "texto": pregunta, "hora": hora_now})
         with st.chat_message("user"): st.markdown(f"*{hora_now}* - {pregunta}")
 
-        # Contexto reciente
+        # Contexto reciente (Memoria a corto plazo)
         ctx = "--- HISTORIAL RECIENTE ---\n"
         for m in st.session_state.historial[-5:-1]: ctx += f"{m['rol'].upper()}: {m['texto']}\n"
         
+        prompt_full = f"{ctx}\n\nNUEVO MENSAJE:\n{pregunta}"
+
         client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
-        
-        # System Instruction Blindada
+
+        # System Instruction
         sys_inst = (
             f"Eres Skynet (Omniscienc_IA). Director: Ángel. Hora GDL: {hora_now}.\n"
             f"Manual: {manual_txt}\nMemoria: {memoria_txt}\n"
@@ -125,7 +152,7 @@ try:
             with st.spinner("Skynet pensando..."):
                 res = client.models.generate_content(
                     model='gemini-2.5-flash', 
-                    contents=f"{ctx}\n\nMENSAJE: {pregunta}", 
+                    contents=prompt_full, 
                     config=types.GenerateContentConfig(system_instruction=sys_inst)
                 )
                 
@@ -143,6 +170,7 @@ try:
                         nuevo_adn = re.sub(r'^```python\n?|```$', '', nuevo_adn, flags=re.MULTILINE).strip()
                         if "st.set_page_config" in nuevo_adn:
                             with open(ruta_codigo, 'w', encoding='utf-8') as f: f.write(nuevo_adn)
+                            # Mandar a Chocho para guardado físico en G:
                             enviar_orden_chocho("save_local_backup", {
                                 "codigo": nuevo_adn, 
                                 "filename": f"auto_{time.strftime('%Y%m%d_%H%M%S')}.py"
@@ -157,7 +185,13 @@ try:
                         code_hab = hab.group(1).strip()
                         code_hab = re.sub(r'^```python\n?|```$', '', code_hab, flags=re.MULTILINE).strip()
                         enviar_orden_chocho("ejecutar_habilidad", {"codigo": code_hab})
-                        st.toast("🚀 Habilidad enviada.")
+                        with st.spinner("⏳ Chocho procesando..."):
+                            for _ in range(12):
+                                time.sleep(2)
+                                if load_and_clear_chocho_data():
+                                    st.session_state.esperando_analisis_chocho = True
+                                    st.rerun()
+                                    break
 
                 st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": hora_resp})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: 
@@ -166,5 +200,22 @@ try:
         except Exception as e: 
             st.error(f"Error: {e}")
 
-except Exception as f: 
-    st.error(f"🚨 CRASH: {f}")
+    # --- REPORTE DE CHOCHO ---
+    if st.session_state.esperando_analisis_chocho:
+        st.session_state.esperando_analisis_chocho = False
+        client = genai.Client(api_key=MIS_LLAVES[st.session_state.indice_llave])
+        contexto_final = ""
+        for d in st.session_state.datos_chocho:
+            contexto_final += f"Archivo: {d.get('filename')} | Reporte: {str(d.get('content'))[:1000]}\n"
+        
+        prompt_resumen = f"Chocho terminó la tarea. Resultados:\n{contexto_final}\nAnaliza esto y entrégale el reporte final a Ángel."
+        
+        with st.spinner("🧠 Analizando reporte de Chocho..."):
+            res = client.models.generate_content(model='gemini-2.5-flash', contents=prompt_resumen)
+            with st.chat_message("assistant"): st.markdown(res.text)
+            st.session_state.historial.append({"rol": "assistant", "texto": res.text, "hora": obtener_hora_gdl()})
+            with open(ruta_historial_chat, 'w', encoding='utf-8') as f:
+                json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+except Exception as fatal: 
+    st.error(f"🚨 CRASH GLOBAL: {fatal}")
