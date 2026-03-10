@@ -34,7 +34,6 @@ try:
     st.caption("Gerente Operativo de GOOB, GUBA y Neurodivergente A.C.")
     st.divider()
 
-    # --- LECTURA SEGURA DE LLAVES (SECRETS) ---
     MIS_LLAVES = [
         st.secrets["api_keys"]["llave_1"],
         st.secrets["api_keys"]["llave_2"],
@@ -63,7 +62,6 @@ try:
             return True
         except: return False
 
-    # --- Función para mandar órdenes o Habilidades a Firebase ---
     def send_chocho_order(command, payload=None):
         try:
             url = f"{FIREBASE_URL}/ordenes.json"
@@ -76,21 +74,28 @@ try:
             st.error(f"Fallo al enviar a la nube: {e}")
             return False
 
+    # FIX DEL CRASH: Manejar las cajas dobles (listas dentro de listas)
     def load_and_clear_chocho_data():
         try:
             url = f"{FIREBASE_URL}/respuestas.json"
             respuesta = requests.get(url)
             if respuesta.status_code == 200 and respuesta.json():
                 datos = respuesta.json()
-                lista_datos = [val for key, val in datos.items()]
+                lista_datos = []
+                for key, val in datos.items():
+                    if isinstance(val, list):
+                        lista_datos.extend(val) # Si viene en lista doble, lo aplasta
+                    elif isinstance(val, dict):
+                        lista_datos.append(val)
                 if lista_datos:
                     st.session_state.datos_chocho = lista_datos
                     st.toast(f"📥 {len(lista_datos)} reportes recibidos desde Firebase.")
                     requests.delete(url)
+                    return True
         except Exception as e:
             pass
+        return False
 
-    # --- Función para procesar Archivos Subidos Manualmente ---
     def procesar_archivo_subido(archivo):
         if archivo.type.startswith('image/'):
             return Image.open(archivo)
@@ -108,7 +113,6 @@ try:
     memoria_txt = leer_archivo(ruta_memoria)
     codigo_actual = leer_archivo(ruta_codigo, 50000)
 
-    # --- BARRA LATERAL (CONTROLES Y UPLOADER) ---
     with st.sidebar:
         st.header("📎 Analizador Visual")
         archivo_usuario = st.file_uploader("Sube una imagen o archivo para Omniscienc_IA", type=["png", "jpg", "jpeg", "pdf", "txt"])
@@ -149,7 +153,6 @@ try:
                     st.session_state.last_generated_code = None
                     st.success("✅ CÓDIGO APLICADO. Presiona F5.")
 
-    # --- CHAT Y RESPUESTAS ---
     if "historial" not in st.session_state:
         st.session_state.historial = []
         if os.path.exists(ruta_historial_chat):
@@ -176,8 +179,8 @@ try:
         if st.session_state.datos_chocho:
             contexto_chocho = "\n\n--- DATOS DE CHOCHO (DESDE FIREBASE) ---\n"
             for d in st.session_state.datos_chocho:
-                content_for_chocho = str(d.get('content'))[:1000]
-                contexto_chocho += f"Archivo: {d.get('filename')} | Estado: {d.get('status')}\nTexto: {content_for_chocho}\n\n"
+                content_for_chocho = str(d.get('content', ''))[:1000]
+                contexto_chocho += f"Archivo: {d.get('filename', 'Desconocido')} | Estado: {d.get('status', 'N/A')}\nTexto: {content_for_chocho}\n\n"
 
         instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
         Manual: {manual_txt}
@@ -206,6 +209,7 @@ try:
                 with st.chat_message("assistant"):
                     st.markdown(res.text)
                     hubo_cambios = False
+                    esperar_a_chocho = False
 
                     cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
                     if cod and "st.set_page_config" in cod.group(1):
@@ -216,7 +220,7 @@ try:
                     hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
                     if hab:
                         send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
-                        hubo_cambios = True
+                        esperar_a_chocho = True # Activamos el radar automático
 
                     man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
                     if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
@@ -226,6 +230,16 @@ try:
 
                 st.session_state.historial.append({"rol": "assistant", "texto": res.text})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
+
+                # MAGIA DE ESPERA AUTOMÁTICA
+                if esperar_a_chocho:
+                    with st.spinner("⏳ Esperando respuesta de Chocho en la computadora..."):
+                        for _ in range(10): # Espera hasta 20 segundos
+                            time.sleep(2)
+                            if load_and_clear_chocho_data():
+                                st.success("✅ ¡Chocho respondió! Procesando datos...")
+                                st.rerun() # Se recarga sola para leer los datos inmediatamente
+                                break
 
                 if hubo_cambios: time.sleep(1); st.rerun()
 
