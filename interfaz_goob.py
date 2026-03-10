@@ -10,7 +10,9 @@ import re
 import shutil
 import datetime
 import json
-import requests  # <-- El nuevo cartero para Firebase
+import requests
+from PIL import Image
+import io
 
 # --- RUTAS MAESTRAS (Adaptadas a la Nube) ---
 ruta_raiz = os.path.dirname(os.path.abspath(__file__))
@@ -60,40 +62,46 @@ try:
             return True
         except: return False
 
-    # --- Función para mandar órdenes a Firebase ---
+    # --- Función para mandar órdenes o Habilidades a Firebase ---
     def send_chocho_order(command, payload=None):
         try:
             url = f"{FIREBASE_URL}/ordenes.json"
             new_order = {"command": command, "timestamp": time.time()}
             if payload: new_order.update(payload)
-            
-            # Enviamos la orden a la nube
             requests.post(url, json=new_order)
-            st.toast(f"✅ Orden '{command}' enviada al puente Firebase.", icon="🚀")
+            st.toast(f"✅ Comando/Habilidad '{command}' enviada al puente Firebase.", icon="🚀")
             return True
         except Exception as e:
-            st.error(f"Fallo al enviar orden a la nube: {e}")
+            st.error(f"Fallo al enviar a la nube: {e}")
             return False
 
-    # --- Función para leer reportes desde Firebase ---
     def load_and_clear_chocho_data():
         try:
             url = f"{FIREBASE_URL}/respuestas.json"
             respuesta = requests.get(url)
             if respuesta.status_code == 200 and respuesta.json():
                 datos = respuesta.json()
-                
-                # Firebase devuelve un diccionario con IDs únicos. Lo convertimos a lista.
                 lista_datos = [val for key, val in datos.items()]
-                
                 if lista_datos:
                     st.session_state.datos_chocho = lista_datos
                     st.toast(f"📥 {len(lista_datos)} reportes recibidos desde Firebase.")
-                    
-                    # Borramos los datos de Firebase para no volver a leerlos
                     requests.delete(url)
         except Exception as e:
-            pass # Si falla o está vacío, no hacemos ruido
+            pass
+
+    # --- Función para procesar Archivos Subidos Manualmente ---
+    def procesar_archivo_subido(archivo):
+        if archivo.type.startswith('image/'):
+            return Image.open(archivo)
+        elif archivo.type == 'application/pdf':
+            texto = ""
+            with pdfplumber.open(archivo) as pdf:
+                for page in pdf.pages: texto += page.extract_text() or ""
+            return texto
+        elif archivo.type == 'text/plain':
+            return archivo.read().decode("utf-8")
+        else:
+            return f"Formato no soportado: {archivo.type}"
 
     manual_txt = leer_archivo(ruta_manual)
     memoria_txt = leer_archivo(ruta_memoria)
@@ -106,7 +114,7 @@ try:
             send_chocho_order("rescan_all")
         if st.button("📍 Mapear Carpetas de Drive"):
             send_chocho_order("list_drive_structure", {"account": "goob_drive"})
-            st.info("Orden enviada a la nube. Chocho la procesará pronto.")
+            st.info("Orden enviada a la nube.")
 
         st.divider()
         st.header("⚡ Estado del Sistema")
@@ -114,11 +122,6 @@ try:
         if st.button("🔄 Cambiar Llave Manualmente"):
             st.session_state.indice_llave = (st.session_state.indice_llave + 1) % len(MIS_LLAVES)
             st.rerun()
-
-        st.divider()
-        st.header("💬 Controles de Chat")
-        if st.button("⬇️ Ir al mensaje más reciente"):
-            st.components.v1.html("<script>var s = parent.document.querySelector('.main .block-container'); if(s) s.scrollTop = s.scrollHeight;</script>", height=0)
 
         st.divider()
         with st.expander("⚙️ Autogestión de Código"):
@@ -145,6 +148,13 @@ try:
     for m in st.session_state.historial[-10:]:
         with st.chat_message(m["rol"]): st.markdown(m["texto"])
 
+    # --- UPLOADER MANUAL DE ARCHIVOS (Los "Ojos") ---
+    archivo_usuario = st.file_uploader("📎 Subir archivo o imagen a Omniscienc_IA", type=["png", "jpg", "jpeg", "pdf", "txt"])
+    contenido_archivo = None
+    if archivo_usuario:
+        contenido_archivo = procesar_archivo_subido(archivo_usuario)
+        st.success(f"Archivo {archivo_usuario.name} listo para ser analizado.")
+
     pregunta = st.chat_input("Escribe tu instrucción operativa...")
 
     if pregunta:
@@ -163,45 +173,52 @@ try:
                 contexto_chocho += f"Archivo: {d.get('filename')} | Estado: {d.get('status')}\nTexto: {content_for_chocho}\n\n"
 
         instruccion = f"""Eres Omniscienc_IA. Director: Ángel.
-        Manual:
-        {manual_txt}
-
-        Memoria:
-        {memoria_txt}
-
+        Manual: {manual_txt}
+        Memoria: {memoria_txt}
         {contexto_chocho}
+        Código actual: ```python\n{codigo_actual}\n```
 
-        Código fuente actual:
-        ```python
-        {codigo_actual}
-        ```
+        REGLAS PARA CREAR HABILIDADES DINÁMICAS (PLUGINS PARA CHOCHO):
+        Si el usuario te pide a ti o a Chocho hacer algo en la computadora local que tú no puedes hacer desde la nube (como buscar texto en muchos archivos, filtrar un excel complejo, o crear un reporte local), DEBES redactar un mini-script de Python.
+        Usa la etiqueta <nueva_habilidad> tu_codigo_python_aqui </nueva_habilidad>. 
+        El código debe ser auto-contenido, importar sus librerías, realizar la tarea en el disco local y usar la función 'send_to_firebase([{"filename": "Reporte_Habilidad", "content": "tus_resultados"}])' para devolverte los datos. Chocho lo ejecutará.
 
-        Si debes modificar código, usa un bloque ```python
+        Si debes modificar tu propio código de Streamlit, usa un bloque ```python
         Para actualizar manual usa <nuevo_manual>...</nuevo_manual>
         Para actualizar memoria usa <nueva_memoria>...</nueva_memoria>"""
 
         try:
             with st.spinner("Pensando..."):
-                res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta, config=types.GenerateContentConfig(system_instruction=instruccion))
+                # Si el usuario subió un archivo/imagen, se lo mandamos a la API
+                if contenido_archivo and isinstance(contenido_archivo, Image.Image):
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=[pregunta, contenido_archivo], config=types.GenerateContentConfig(system_instruction=instruccion))
+                elif contenido_archivo and isinstance(contenido_archivo, str):
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=f"Archivo subido por usuario:\n{contenido_archivo}\n\nInstrucción: {pregunta}", config=types.GenerateContentConfig(system_instruction=instruccion))
+                else:
+                    res = client.models.generate_content(model='gemini-2.5-flash', contents=pregunta, config=types.GenerateContentConfig(system_instruction=instruccion))
+                
                 with st.chat_message("assistant"):
                     st.markdown(res.text)
                     hubo_cambios = False
 
+                    # Detección de código para actualizarse a sí misma
                     cod = re.search(r'```python\n?(.*?)\n?```', res.text, re.DOTALL)
-                    if cod:
+                    if cod and "st.set_page_config" in cod.group(1): # Validamos que sea código de streamlit
                         st.session_state.last_generated_code = cod.group(1).strip()
-                        st.toast("🚨 ¡Código listo en el panel lateral!", icon="⚠️")
+                        st.toast("🚨 ¡Código Streamlit listo en el panel lateral!", icon="⚠️")
+                        hubo_cambios = True
+
+                    # Detección de Habilidades Dinámicas para Chocho
+                    hab = re.search(r'<nueva_habilidad>\n?(.*?)\n?</nueva_habilidad>', res.text, re.DOTALL)
+                    if hab:
+                        send_chocho_order("ejecutar_habilidad", {"codigo": hab.group(1).strip()})
                         hubo_cambios = True
 
                     man = re.search(r'<nuevo_manual>\n?(.*?)\n?</nuevo_manual>', res.text, re.DOTALL)
-                    if man:
-                        escribir_archivo(ruta_manual, man.group(1).strip())
-                        hubo_cambios = True
+                    if man: escribir_archivo(ruta_manual, man.group(1).strip()); hubo_cambios = True
 
                     mem = re.search(r'<nueva_memoria>\n?(.*?)\n?</nueva_memoria>', res.text, re.DOTALL)
-                    if mem:
-                        escribir_archivo(ruta_memoria, mem.group(1).strip())
-                        hubo_cambios = True
+                    if mem: escribir_archivo(ruta_memoria, mem.group(1).strip()); hubo_cambios = True
 
                 st.session_state.historial.append({"rol": "assistant", "texto": res.text})
                 with open(ruta_historial_chat, 'w', encoding='utf-8') as f: json.dump(st.session_state.historial, f, ensure_ascii=False)
