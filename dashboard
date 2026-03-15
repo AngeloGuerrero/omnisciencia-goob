@@ -1,0 +1,25 @@
+from google import genai
+from google.genai import types
+
+
+def preguntar_gemini(pregunta, api_key):
+
+    client = genai.Client(api_key=api_key)
+
+    sistema = (
+        "ERES EL NÚCLEO DE OMNISCIENCIA.\n"
+        "Trabajas con un agente llamado CHOCHO.\n"
+        "Puedes generar código Python dentro de etiquetas:\n"
+        "<nueva_habilidad> codigo </nueva_habilidad>\n"
+        "Ese código será ejecutado por el agente."
+    )
+
+    respuesta = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=pregunta,
+        config=types.GenerateContentConfig(
+            system_instruction=sistema
+        )
+    )
+
+    return respuesta.text
