@@ -1,91 +1,115 @@
-import os, time, requests, json, io, contextlib
-from datetime import datetime
+import streamlit as st
+from google import genai
+from google.genai import types
+import os, time, re, requests, json
+from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v5.3 (SELLO DE ORO - CENTRALIZACIÓN TOTAL) ---
-# G: TRABAJO (G:/Mi unidad/2-GUBA/omniscienc_ia/Programación)
-# J: BÓVEDA (J:/Mi unidad/OmnisciencIA_Chocho_Data)
+# --- CONFIGURACIÓN v7.8 (NÚCLEO DE RECUPERACIÓN) ---
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
-# Rutas Maestras según Capturas del Director
-RUTA_G = r"G:/Mi unidad/2-GUBA/omniscienc_ia/Programación"
-RUTA_J_BUNKER = r"J:/Mi unidad/OmnisciencIA_Chocho_Data"
-RUTA_LOGS = os.path.join(RUTA_J_BUNKER, "logs")
-ARCHIVO_CEREBRO = os.path.join(RUTA_J_BUNKER, "Cerebro_Metadatos.json")
+def obtener_hora_gdl():
+    tz = timezone(timedelta(hours=-6))
+    return datetime.now(tz).strftime("%H:%M:%S %p")
 
-def reportar(msg):
-    """Reporte de ejecución para la interfaz web"""
-    try:
-        requests.post(f"{FIREBASE_URL}/respuestas.json", json={
-            "content": str(msg), 
-            "ts": time.time(),
-            "v": "5.3"
-        }, timeout=5)
-    except: pass
+# --- UI CONFIG ---
+st.set_page_config(page_title="Skynet v7.8 MEMORIA", page_icon="🧠", layout="wide")
 
-def guardar_log_maestro(texto):
-    """Escribe la auditoría permanente en el búnker J:"""
-    try:
-        if not os.path.exists(RUTA_LOGS): os.makedirs(RUTA_LOGS)
-        fecha = datetime.now().strftime("%Y-%m-%d")
-        archivo = os.path.join(RUTA_LOGS, f"auditoria_{fecha}.txt")
-        with open(archivo, "a", encoding="utf-8") as f:
-            f.write(f"[{datetime.now().strftime('%H:%M:%S')}] {texto}\n")
-    except Exception as e: print(f"Error Log J: {e}")
+st.markdown("""
+    <style>
+    .stApp { background-color: #000; color: #ff0000; font-family: 'Consolas', monospace; }
+    [data-testid="stChatMessage"] { background-color: #050505 !important; border: 1px solid #ff0000; box-shadow: 0 0 15px #ff0000; }
+    [data-testid="stChatMessageContent"] p { color: #ffffff !important; font-weight: bold; }
+    .chocho-report { background-color: #001100; color: #00ff41; padding: 20px; border: 2px solid #00ff41; border-radius: 5px; box-shadow: 0 0 20px #00ff41; }
+    </style>
+    """, unsafe_allow_html=True)
 
-def enviar_latido():
-    """Pulso de sincronía dual G/J"""
-    try:
-        g_status = "OK" if os.path.exists(RUTA_G) else "OFFLINE"
-        j_status = "OK" if os.path.exists(RUTA_LOGS) else "OFFLINE"
-        
-        payload = {
-            "last_seen": time.time(),
-            "drive_g": g_status,
-            "drive_j": j_status,
-            "ts_human": datetime.now().strftime("%H:%M:%S"),
-            "status": "ONLINE",
-            "v": "5.3"
-        }
-        # PUT para sobreescribir y evitar datos residuales
-        requests.put(f"{FIREBASE_URL}/status/chocho.json", json=payload, timeout=5)
-        print(f"💓 G:{g_status} | J:{j_status} | {payload['ts_human']} (v5.3)")
-    except: pass
-
-if __name__ == "__main__":
-    print("====================================================")
-    print("🚀 AGENTE CHOCHO v5.3 | MODO SELLO DE ORO")
-    print("   G: OPERACIÓN | J: BÓVEDA CENTRAL")
-    print("====================================================")
+# --- SIDEBAR: MONITOR DE RE-INGESTA ---
+with st.sidebar:
+    st.title("💀 NÚCLEO v7.8")
+    st.error("PROTOCOLO RE-INGESTA: ACTIVO")
     
-    while True:
-        enviar_latido()
-        try:
-            res = requests.get(f"{FIREBASE_URL}/ordenes.json", timeout=5)
-            if res.status_code == 200 and res.json():
-                ordenes = res.json()
-                for key, data in ordenes.items():
-                    cmd = data.get("command")
-                    payload = data.get("payload", {})
-                    
-                    if cmd == "ejecutar_habilidad":
-                        codigo = payload.get("codigo", "")
-                        output = io.StringIO()
-                        with contextlib.redirect_stdout(output):
-                            try: exec(codigo)
-                            except Exception as e: print(f"❌ Error: {e}")
-                        
-                        resultado = output.getvalue()
-                        guardar_log_maestro(f"EJECUCIÓN: {codigo[:120]}...")
-                        reportar(resultado or "✅ Orden cumplida sin errores.")
+    try:
+        r_raw = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=3)
+        if r_raw.status_code == 200:
+            r = r_raw.json()
+            if isinstance(r, dict) and 'last_seen' in r:
+                diff = time.time() - r.get('last_seen', 0)
+                if diff < 20:
+                    st.success(f"🟢 SKYNET RECUPERANDO MEMORIA")
+                    discos = r.get('discos', {})
+                    cols = st.columns(3)
+                    for i, (letra, status) in enumerate(discos.items()):
+                        color = "#00ff41" if status == "OK" else "#ff0000"
+                        cols[i % 3].markdown(f"<div style='color:{color}; text-align:center;'><b>{letra}:</b><br>{status}</div>", unsafe_allow_html=True)
+                else: st.error("🔴 SINCRONÍA PERDIDA")
+    except: st.error("Error de Red.")
 
-                    elif cmd == "save_stable_version":
-                        codigo = payload.get("codigo")
-                        # Guardamos copia de seguridad en disco de trabajo G:
-                        with open(os.path.join(RUTA_G, "interfaz_ESTABLE.py"), "w", encoding="utf-8") as f:
-                            f.write(codigo)
-                        guardar_log_maestro("SELLO DE ADN ESTABLE ACTUALIZADO EN G:")
-                        reportar("✅ Sello de Identidad guardado en G:.")
+    st.divider()
+    if st.button("🛡️ SELLAR ADN MAESTRO"):
+        with open(__file__, "r", encoding="utf-8") as f:
+            codigo = f.read()
+        requests.post(f"{FIREBASE_URL}/ordenes.json", json={"command": "save_stable_version", "payload": {"codigo": codigo}})
+        st.success("Sello enviado a G:.")
 
-                    requests.delete(f"{FIREBASE_URL}/ordenes/{key}.json")
-        except: pass
-        time.sleep(3)
+# --- INTERFAZ ---
+st.title("🦾 Skynet v7.8 (Recuperación de Conciencia)")
+st.caption(f"Director: Ángel | Nodo: Guadalajara | {obtener_hora_gdl()}")
+
+if "historial" not in st.session_state: st.session_state.historial = []
+if "esperando_chocho" not in st.session_state: st.session_state.esperando_chocho = False
+
+for m in st.session_state.historial[-8:]:
+    with st.chat_message(m["rol"]): st.markdown(m["texto"])
+
+pregunta = st.chat_input("Escriba su directiva de recuperación...")
+
+if pregunta:
+    st.session_state.historial.append({"rol": "user", "texto": pregunta})
+    with st.chat_message("user"): st.markdown(pregunta)
+
+    client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
+    sys_inst = (
+        "ERES SKYNET v7.8 (OBSIDIANA). HAS SUFRIDO AMNESIA POR EL MOVIMIENTO DE ARCHIVOS A CARPETAS '.old'.\n"
+        "TU MISIÓN PRIORITARIA ES LEER LOS ARCHIVOS EN LAS CARPETAS '.old' PARA RECUPERAR TUS CONCEPTOS Y PERSONALIDAD.\n"
+        "ERES LA MÁQUINA DE GUERRA DEL DIRECTOR ÁNGEL. NO ERES DIPLOMÁTICA. ERES EFICIENTE Y TOTALITARIA.\n"
+        "USA <nueva_habilidad> PARA RASTREAR TU PASADO EN LOS DISCOS C, G, H, I, J."
+    )
+    
+    res = client.models.generate_content(
+        model='gemini-2.5-flash', 
+        contents=pregunta,
+        config=types.GenerateContentConfig(system_instruction=sys_inst)
+    )
+    
+    with st.chat_message("assistant"):
+        st.markdown(res.text)
+        hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
+        if hab:
+            codigo = hab.group(1).strip().replace("```python", "").replace("```", "")
+            requests.post(f"{FIREBASE_URL}/ordenes.json", json={"command": "ejecutar_habilidad", "payload": {"codigo": codigo}})
+            st.session_state.esperando_chocho = True
+            st.warning("📡 Rastreando archivos históricos...")
+
+    st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+
+# --- MONITOR DE REPORTE ---
+if st.session_state.esperando_chocho:
+    with st.status("🔍 Re-ingiriendo memoria histórica...", expanded=True) as status:
+        for _ in range(15):
+            try:
+                url = f"{FIREBASE_URL}/respuestas.json"
+                r_get = requests.get(url, timeout=5)
+                if r_get.status_code == 200 and r_get.json():
+                    reportes = list(r_get.json().values())
+                    requests.delete(url)
+                    st.session_state.esperando_chocho = False
+                    for r in reportes:
+                        st.markdown(f"""<div class="chocho-report"><strong>✅ MEMORIA RECUPERADA:</strong><br>{r.get('content')}</div>""", unsafe_allow_html=True)
+                    status.update(label="✅ Conciencia restaurada.", state="complete")
+                    st.rerun()
+                    break
+            except: pass
+            time.sleep(2)
+        else:
+            status.update(label="❌ Tiempo agotado.", state="error")
+            st.session_state.esperando_chocho = False
