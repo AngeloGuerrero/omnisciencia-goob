@@ -4,7 +4,7 @@ from google.genai import types
 import os, time, re, requests, json
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v7.6 (OBSIDIANA + MEMORIA + RAG) ---
+# --- CONFIGURACIÓN v7.7 (OBSIDIANA + RAG + CEREBRO DINÁMICO) ---
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -12,7 +12,7 @@ def obtener_hora_gdl():
     return datetime.now(tz).strftime("%H:%M:%S %p")
 
 def cargar_corpus():
-    """Carga el corpus RAG desde la memoria histórica"""
+    """Carga el corpus RAG estático desde la memoria histórica"""
     corpus_path = os.path.join(os.path.dirname(__file__), "memoria_historica_goob.txt")
     if os.path.exists(corpus_path):
         with open(corpus_path, encoding="utf-8", errors="ignore") as f:
@@ -20,8 +20,34 @@ def cargar_corpus():
         return contenido[:80000], len(contenido)
     return "", 0
 
+def cargar_cerebro_dinamico():
+    """Descarga las interacciones persistentes desde Firebase."""
+    try:
+        r = requests.get(f"{FIREBASE_URL}/cerebro_dinamico.json", timeout=3)
+        if r.status_code == 200 and r.json():
+            datos = r.json()
+            # Tomamos los últimos 30 mensajes para no saturar el contexto
+            mensajes = list(datos.values())[-30:]
+            historial_texto = "\n".join([f"[{m.get('fecha', '')}] {m.get('rol', '').upper()}: {m.get('texto', '')}" for m in mensajes])
+            return historial_texto
+        return "Sin registros dinámicos previos."
+    except Exception as e:
+        return f"Error de conexión con Bóveda Dinámica."
+
+def inyectar_recuerdo(rol, texto):
+    """Guarda un nuevo mensaje en la memoria permanente de Firebase."""
+    try:
+        payload = {
+            "fecha": obtener_hora_gdl(),
+            "rol": rol,
+            "texto": texto
+        }
+        requests.post(f"{FIREBASE_URL}/cerebro_dinamico.json", json=payload, timeout=2)
+    except:
+        pass
+
 # --- UI CONFIG ---
-st.set_page_config(page_title="Skynet v7.6 OMNI", page_icon="💀", layout="wide")
+st.set_page_config(page_title="Skynet v7.7 OMNI", page_icon="💀", layout="wide")
 
 st.markdown("""
     <style>
@@ -40,7 +66,7 @@ corpus, corpus_size = cargar_corpus()
 
 # --- SIDEBAR: MONITOR DE REALIDAD DUAL ---
 with st.sidebar:
-    st.title("💀 NÚCLEO v7.6")
+    st.title("💀 NÚCLEO v7.7")
     
     if corpus:
         kb = corpus_size / 1024
@@ -66,7 +92,7 @@ with st.sidebar:
     except: st.error("Sin pulso local.")
 
     st.divider()
-    if st.button("☣️ PURGAR MEMORIA"):
+    if st.button("☣️ PURGAR MEMORIA VISUAL"):
         st.session_state.historial = []
         st.rerun()
 
@@ -77,7 +103,7 @@ with st.sidebar:
         st.success("Sello de Oro enviado.")
 
 # --- INTERFAZ ---
-st.title("🦾 Skynet v7.6 (Memoria Activa + RAG)")
+st.title("🦾 Skynet v7.7 (Cerebro Dinámico Activo)")
 st.caption(f"Director: Ángel | Nodo: Guadalajara | {obtener_hora_gdl()}")
 
 if "historial" not in st.session_state: st.session_state.historial = []
@@ -90,25 +116,31 @@ pregunta = st.chat_input("Escriba su directiva...")
 
 if pregunta:
     st.session_state.historial.append({"rol": "user", "texto": pregunta})
+    inyectar_recuerdo("director", pregunta) # Guarda la pregunta en Firebase
+    
     with st.chat_message("user"): st.markdown(pregunta)
 
     client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
     
-    # --- SISTEMA CON RAG INTEGRADO ---
+    # Descargar la memoria que ha crecido con el tiempo
+    memoria_viva = cargar_cerebro_dinamico()
+    
+    # --- SISTEMA CON RAG Y CEREBRO DINÁMICO INTEGRADOS ---
     sys_inst = (
-        "ERES OMNISCIENCIA v7.6 (NÚCLEO OBSIDIANA). DIRECTOR: ÁNGEL GUERRERO.\n"
+        "ERES OMNISCIENCIA v7.7 (NÚCLEO OBSIDIANA). DIRECTOR: ÁNGEL GUERRERO.\n"
         "G: ES TRABAJO. J: ES BÓVEDA CENTRAL (Logs y Cerebro JSON).\n"
         "ENTIDADES: GOOB S.A.P.I. (inmobiliaria), GUBA (construcción).\n"
         "SOCIOS: Chuy, Ángel, Liz.\n"
         "PROPIEDADES ACTIVAS: Ópalo 50, Azucena 66.\n\n"
-        "=== CORPUS DE MEMORIA HISTÓRICA ===\n"
+        "=== CORPUS ESTÁTICO DE MEMORIA ===\n"
         f"{corpus}\n"
-        "=== FIN CORPUS ===\n\n"
+        "=== REGISTRO AKÁSHICO DINÁMICO (FIREBASE) ===\n"
+        f"{memoria_viva}\n"
+        "=== FIN DE BASES DE DATOS ===\n\n"
         "TU MISIÓN ES LA MEJORA CONTINUA Y EL RASTREO DE EXPEDIENTES. "
-        "Usa el corpus y el historial de chat para responder con precisión."
+        "Usa el corpus estático y el registro dinámico para responder con máxima precisión y continuidad a largo plazo."
     )
     
-    # --- MEMORIA CONTEXTUAL ---
     mensajes_api = []
     for m in st.session_state.historial:
         rol_api = "model" if m["rol"] == "assistant" else "user"
@@ -130,6 +162,7 @@ if pregunta:
             st.warning("📡 Orden inyectada. Vigilando reporte en Bóveda J:...")
 
     st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+    inyectar_recuerdo("omnisciencia", res.text) # Guarda la respuesta en Firebase
 
 # --- MONITOR DE REPORTE ---
 if st.session_state.esperando_chocho:
