@@ -4,7 +4,7 @@ from google.genai import types
 import os, time, re, requests, json
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v7.9 (MODO OPERACIONES) ---
+# --- CONFIGURACIÓN v7.9.1 (ESTABILIDAD TOTAL) ---
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -12,37 +12,26 @@ def obtener_hora_gdl():
     return datetime.now(tz).strftime("%H:%M:%S %p")
 
 # --- UI: DISEÑO GitHub Dark ---
-st.set_page_config(page_title="Omnisciencia v7.9", page_icon="🦾", layout="wide")
+st.set_page_config(page_title="Omnisciencia v7.9.1", page_icon="🦾", layout="wide")
 
 st.markdown("""
     <style>
     .stApp { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; }
-    [data-testid="stChatMessage"] { 
-        background-color: #161b22 !important; 
-        border: 1px solid #30363d; 
-        border-radius: 8px;
-        margin-bottom: 15px;
-    }
-    [data-testid="stChatMessageContent"] p { 
-        color: #e6edf3 !important; 
-        font-size: 18px !important; 
-        line-height: 1.6;
-    }
+    [data-testid="stChatMessage"] { background-color: #161b22 !important; border: 1px solid #30363d; border-radius: 8px; margin-bottom: 15px; }
+    [data-testid="stChatMessageContent"] p { color: #e6edf3 !important; font-size: 18px !important; line-height: 1.6; }
     [data-testid="stSidebar"] { background-color: #010409 !important; border-right: 1px solid #30363d; }
     .stButton>button { background-color: #21262d; color: #58a6ff; border: 1px solid #30363d; width: 100%; font-weight: bold; }
-    .stButton>button:hover { background-color: #30363d; border-color: #8b949e; }
     .chocho-report { background-color: #000; color: #39ff14; padding: 15px; border-radius: 5px; font-family: 'Consolas', monospace; font-size: 14px; border: 1px solid #39ff14; }
     </style>
     """, unsafe_allow_html=True)
 
 # --- SIDEBAR OPERATIVO ---
 with st.sidebar:
-    st.title("🦾 NÚCLEO v7.9")
+    st.title("🦾 NÚCLEO v7.9.1")
     st.markdown("---")
-    
     try:
         r = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=3).json()
-        if r and (time.time() - r.get('last_seen', 0)) < 45:
+        if r and (time.time() - r.get('last_seen', 0)) < 60:
             st.success(f"🟢 CHOCHO EN LÍNEA ({r.get('ts_human')})")
             mapa = r.get('mapa_goob', {})
             if mapa:
@@ -52,7 +41,7 @@ with st.sidebar:
         else:
             st.error("🔴 CHOCHO DESCONECTADO")
     except:
-        st.warning("⚠️ Error de pulso")
+        st.warning("⚠️ Sin conexión a Firebase")
 
     st.markdown("---")
     if st.button("🛡️ SELLAR VERSIÓN ESTABLE"):
@@ -77,46 +66,53 @@ if pregunta:
     st.session_state.historial.append({"rol": "user", "texto": pregunta})
     with st.chat_message("user"): st.markdown(pregunta)
 
+    # Preparar contexto
     try:
         r_mapa = requests.get(f"{FIREBASE_URL}/status/chocho.json").json()
         contexto_real = json.dumps(r_mapa.get('mapa_goob', {}))
     except:
         contexto_real = "{}"
 
-    sys_inst = (
-        f"ERES OMNISCIENCIA. DIRECTOR: ÁNGEL. MAPA REAL: {contexto_real}. "
-        "Usa este mapa para dar opciones reales. No inventes rutas."
-    )
+    sys_inst = f"ERES OMNISCIENCIA. DIRECTOR: ÁNGEL. MAPA REAL: {contexto_real}. No inventes rutas."
     
-    client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
-    res = client.models.generate_content(
-        model='gemini-2.0-flash', 
-        contents=[{"role": "user", "parts": [{"text": pregunta}]}],
-        config=types.GenerateContentConfig(system_instruction=sys_inst)
-    )
-    
+    # LLAMADA A LA API CON MANEJO DE ERRORES
+    try:
+        client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
+        # Cambiamos a 1.5-flash para mayor estabilidad de cuota
+        res = client.models.generate_content(
+            model='gemini-1.5-flash', 
+            contents=[{"role": "user", "parts": [{"text": pregunta}]}],
+            config=types.GenerateContentConfig(system_instruction=sys_inst)
+        )
+        respuesta_texto = res.text
+    except Exception as e:
+        respuesta_texto = f"❌ ERROR DE API: Google rechazó la petición. Intenta de nuevo en unos segundos. Detalles: {str(e)}"
+
     with st.chat_message("assistant"):
-        st.markdown(res.text)
-        hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', res.text, re.DOTALL)
+        st.markdown(respuesta_texto)
+        hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', respuesta_texto, re.DOTALL)
         if hab:
             codigo = hab.group(1).strip().replace("```python", "").replace("```", "")
             requests.post(f"{FIREBASE_URL}/ordenes.json", json={"command": "ejecutar_habilidad", "payload": {"codigo": codigo}})
             st.session_state.esperando = True
 
-    st.session_state.historial.append({"rol": "assistant", "texto": res.text})
+    st.session_state.historial.append({"rol": "assistant", "texto": respuesta_texto})
 
+# Monitor de respuesta local
 if st.session_state.esperando:
     with st.status("🛠️ Chocho operando...", expanded=True) as s:
         for _ in range(15):
-            r_res = requests.get(f"{FIREBASE_URL}/respuestas.json").json()
-            if r_res:
-                resp = list(r_res.values())[0]
-                st.markdown(f'<div class="chocho-report">{resp.get("content")}</div>', unsafe_allow_html=True)
-                requests.delete(f"{FIREBASE_URL}/respuestas.json")
-                st.session_state.esperando = False
-                s.update(label="✅ Finalizado", state="complete")
-                break
+            try:
+                r_res = requests.get(f"{FIREBASE_URL}/respuestas.json").json()
+                if r_res:
+                    resp = list(r_res.values())[0]
+                    st.markdown(f'<div class="chocho-report">{resp.get("content")}</div>', unsafe_allow_html=True)
+                    requests.delete(f"{FIREBASE_URL}/respuestas.json")
+                    st.session_state.esperando = False
+                    s.update(label="✅ Finalizado", state="complete")
+                    break
+            except: pass
             time.sleep(2)
         else:
             st.session_state.esperando = False
-            s.update(label="❌ Timeout", state="error")
+            s.update(label="⚠️ Sin respuesta local", state="error")
