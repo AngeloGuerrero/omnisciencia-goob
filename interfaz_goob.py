@@ -4,7 +4,7 @@ from google.genai import types
 import os, time, re, requests, json
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v7.9.1 (ESTABILIDAD TOTAL) ---
+# --- CONFIGURACIÓN v7.9.2 (ESTABILIDAD TOTAL) ---
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -12,7 +12,7 @@ def obtener_hora_gdl():
     return datetime.now(tz).strftime("%H:%M:%S %p")
 
 # --- UI: DISEÑO GitHub Dark ---
-st.set_page_config(page_title="Omnisciencia v7.9.1", page_icon="🦾", layout="wide")
+st.set_page_config(page_title="Omnisciencia v7.9.2", page_icon="🦾", layout="wide")
 
 st.markdown("""
     <style>
@@ -27,7 +27,7 @@ st.markdown("""
 
 # --- SIDEBAR OPERATIVO ---
 with st.sidebar:
-    st.title("🦾 NÚCLEO v7.9.1")
+    st.title("🦾 NÚCLEO v7.9.2")
     st.markdown("---")
     try:
         r = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=3).json()
@@ -66,7 +66,6 @@ if pregunta:
     st.session_state.historial.append({"rol": "user", "texto": pregunta})
     with st.chat_message("user"): st.markdown(pregunta)
 
-    # Preparar contexto
     try:
         r_mapa = requests.get(f"{FIREBASE_URL}/status/chocho.json").json()
         contexto_real = json.dumps(r_mapa.get('mapa_goob', {}))
@@ -75,10 +74,9 @@ if pregunta:
 
     sys_inst = f"ERES OMNISCIENCIA. DIRECTOR: ÁNGEL. MAPA REAL: {contexto_real}. No inventes rutas."
     
-    # LLAMADA A LA API CON MANEJO DE ERRORES
+    # LLAMADA CORREGIDA PARA LIBRERÍA GOOGLE-GENAI
     try:
         client = genai.Client(api_key=st.secrets["api_keys"]["llave_1"])
-        # Cambiamos a 1.5-flash para mayor estabilidad de cuota
         res = client.models.generate_content(
             model='gemini-1.5-flash', 
             contents=[{"role": "user", "parts": [{"text": pregunta}]}],
@@ -86,7 +84,7 @@ if pregunta:
         )
         respuesta_texto = res.text
     except Exception as e:
-        respuesta_texto = f"❌ ERROR DE API: Google rechazó la petición. Intenta de nuevo en unos segundos. Detalles: {str(e)}"
+        respuesta_texto = f"❌ ERROR DE CONEXIÓN: {str(e)}"
 
     with st.chat_message("assistant"):
         st.markdown(respuesta_texto)
@@ -115,4 +113,4 @@ if st.session_state.esperando:
             time.sleep(2)
         else:
             st.session_state.esperando = False
-            s.update(label="⚠️ Sin respuesta local", state="error")
+            s.update(label="⚠️ Sin respuesta", state="error")
