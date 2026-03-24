@@ -1,10 +1,9 @@
 import streamlit as st
-from google import genai
-from google.genai import types
+import google.generativeai as genai # Librería estable
 import os, time, re, requests, json
 from datetime import datetime, timedelta, timezone
 
-# --- CONFIGURACIÓN v7.9.4 (TRIPLE ROTACIÓN DE LLAVES) ---
+# --- CONFIGURACIÓN v8.0 (ESTABILIDAD LEGACY) ---
 FIREBASE_URL = "https://omnisciencia-cb0c0-default-rtdb.firebaseio.com"
 
 def obtener_hora_gdl():
@@ -12,7 +11,7 @@ def obtener_hora_gdl():
     return datetime.now(tz).strftime("%H:%M:%S %p")
 
 # --- UI: DISEÑO GitHub Dark ---
-st.set_page_config(page_title="Omnisciencia v7.9.4", page_icon="🦾", layout="wide")
+st.set_page_config(page_title="Omnisciencia v8.0", page_icon="🦾", layout="wide")
 st.markdown("""
     <style>
     .stApp { background-color: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; }
@@ -26,7 +25,7 @@ st.markdown("""
 
 # --- SIDEBAR ---
 with st.sidebar:
-    st.title("🦾 NÚCLEO v7.9.4")
+    st.title("🦾 NÚCLEO v8.0")
     st.markdown("---")
     try:
         r = requests.get(f"{FIREBASE_URL}/status/chocho.json", timeout=3).json()
@@ -42,30 +41,25 @@ with st.sidebar:
     except:
         st.warning("⚠️ Error Firebase")
 
-# --- LÓGICA DE TRIPLE ROTACIÓN ---
-def llamar_ia_triple(instruccion, prompt):
+# --- LÓGICA DE ROTACIÓN (LIBRERÍA ESTABLE) ---
+def llamar_ia_v8(instruccion, prompt):
     llaves = ["llave_1", "llave_2", "llave_3"]
-    error_acumulado = []
-    
     for alias in llaves:
         try:
-            if alias not in st.secrets["api_keys"]:
-                continue
-                
-            api_key = st.secrets["api_keys"][alias]
-            client = genai.Client(api_key=api_key)
-            
-            res = client.models.generate_content(
-                model='gemini-1.5-flash',
-                contents=[{"role": "user", "parts": [{"text": prompt}]}],
-                config=types.GenerateContentConfig(system_instruction=instruccion)
-            )
-            return res.text, alias
+            # Verificamos si la llave existe en secrets
+            if alias in st.secrets.get("api_keys", {}):
+                key = st.secrets["api_keys"][alias]
+                genai.configure(api_key=key)
+                # Modelo con nomenclatura estable
+                model = genai.GenerativeModel(
+                    model_name='gemini-1.5-flash',
+                    system_instruction=instruccion
+                )
+                res = model.generate_content(prompt)
+                return res.text, alias
         except Exception as e:
-            error_acumulado.append(f"{alias}: {str(e)}")
             continue
-            
-    return f"❌ FALLA TOTAL: Todas las llaves (1, 2 y 3) fallaron. Errores: {'; '.join(error_acumulado)}", "NINGUNA"
+    return "❌ TODAS LAS LLAVES FALLARON. Revisa tus Secrets en Streamlit.", "ERROR"
 
 # --- CHAT ---
 st.title("Gestión Omnisciencia GOOB")
@@ -91,21 +85,21 @@ if pregunta:
 
     sys_inst = f"ERES OMNISCIENCIA. DIRECTOR: ÁNGEL. MAPA REAL: {ctx}. No inventes rutas."
     
-    with st.spinner("Consultando NÚCLEO..."):
-        respuesta_texto, llave_usada = llamar_ia_triple(sys_inst, pregunta)
+    with st.spinner("Conectando con el NÚCLEO..."):
+        respuesta, llave = llamar_ia_v8(sys_inst, pregunta)
 
     with st.chat_message("assistant"):
-        st.markdown(respuesta_texto)
-        if "❌" not in respuesta_texto:
-            st.caption(f"📡 Respuesta vía: {llave_usada}")
+        st.markdown(respuesta)
+        if "❌" not in respuesta:
+            st.caption(f"📡 Llave activa: {llave}")
         
-        hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', respuesta_texto, re.DOTALL)
+        hab = re.search(r'<nueva_habilidad>(.*?)</nueva_habilidad>', respuesta, re.DOTALL)
         if hab:
             codigo = hab.group(1).strip().replace("```python", "").replace("```", "")
             requests.post(f"{FIREBASE_URL}/ordenes.json", json={"command": "ejecutar_habilidad", "payload": {"codigo": codigo}})
             st.session_state.esperando = True
 
-    st.session_state.historial.append({"rol": "assistant", "texto": respuesta_texto})
+    st.session_state.historial.append({"rol": "assistant", "texto": respuesta})
 
 # Monitor Chocho
 if st.session_state.esperando:
@@ -118,7 +112,7 @@ if st.session_state.esperando:
                     st.markdown(f'<div class="chocho-report"><strong>REPORTE LOCAL:</strong><br>{resp.get("content")}</div>', unsafe_allow_html=True)
                     requests.delete(f"{FIREBASE_URL}/respuestas.json")
                     st.session_state.esperando = False
-                    s.update(label="✅ Operación finalizada", state="complete")
+                    s.update(label="✅ Finalizado", state="complete")
                     break
             except: pass
             time.sleep(2)
